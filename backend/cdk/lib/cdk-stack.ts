@@ -23,7 +23,8 @@ export class CdkStack extends cdk.Stack {
 
     // 🔹 Cognito
     const userPool = new cognito.UserPool(this, 'UserPool', {
-      selfSignUpEnabled: true
+      selfSignUpEnabled: true,
+      signInAliases: { email: true }
     });
 
     const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
@@ -32,7 +33,7 @@ export class CdkStack extends cdk.Stack {
 
     // 🔹 Lambda
     const apiLambda = new lambda.Function(this, 'ApiLambda', {
-      runtime: lambda.Runtime.NODEJS_18_X,
+      runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset('../lambda'),
       environment: {
