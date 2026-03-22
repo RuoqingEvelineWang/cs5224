@@ -30,11 +30,11 @@ export default function CreateEvent() {
 
   return (
     <div>
-      <h2>Select Friends</h2>
+      <h2 className="text-xl font-semibold mb-4">Select Friends</h2>
 
       {friends.map(friend => (
-        <div key={friend.id}>
-          <label>
+        <div key={friend.id} className="py-2">
+          <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
               checked={selected.includes(friend.id)}
@@ -46,7 +46,7 @@ export default function CreateEvent() {
       ))}
 
       <button
-        style={{ marginTop: 20 }}
+        className="mt-6 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         onClick={handleCreate}
       >
         Create Event

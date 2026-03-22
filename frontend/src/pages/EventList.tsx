@@ -13,16 +13,16 @@ export default function EventList() {
     });
   }, []);
 
-  if (loading) return <div>Loading events...</div>;
+  if (loading) return <div className="text-gray-500">Loading events...</div>;
 
   return (
     <div>
-      <h2>Events</h2>
+      <h2 className="text-xl font-semibold mb-4">Events</h2>
 
-      {events.length === 0 && <div>No events</div>}
+      {events.length === 0 && <div className="text-gray-500">No events</div>}
 
       {events.map(e => (
-        <div key={e.eventId}>{e.eventId}</div>
+        <div key={e.eventId} className="py-2 border-b border-gray-200 text-gray-800">{e.eventId}</div>
       ))}
     </div>
   );
