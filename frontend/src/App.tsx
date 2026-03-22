@@ -3,7 +3,6 @@ import { Routes, Route, BrowserRouter, Link } from 'react-router-dom';
 import EventList from './pages/EventList.tsx';
 import CreateEvent from './pages/CreateEvent.tsx';
 import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
-import "@aws-amplify/ui-react/styles.css";
 
 Amplify.configure({
   Auth: {
@@ -19,13 +18,13 @@ function AppContent() {
 
   return (
     <BrowserRouter>
-      <div style={{ padding: 20 }}>
-        <h1>Welcome {user?.username}</h1>
+      <div className="max-w-2xl mx-auto p-6">
+        <h1 className="text-3xl font-bold mb-4">Welcome {user?.username}</h1>
 
-        <nav style={{ marginBottom: 20 }}>
-          <Link to="/">Events</Link> |{" "}
-          <Link to="/create">Create Event</Link> |{" "}
-          <button onClick={signOut}>Sign Out</button>
+        <nav className="flex items-center gap-4 mb-6">
+          <Link to="/" className="text-blue-600 hover:underline">Events</Link>
+          <Link to="/create" className="text-blue-600 hover:underline">Create Event</Link>
+          <button onClick={signOut} className="ml-auto text-sm text-gray-500 hover:text-gray-800">Sign Out</button>
         </nav>
 
         <Routes>
