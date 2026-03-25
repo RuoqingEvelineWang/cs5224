@@ -1,45 +1,153 @@
-import { Amplify } from 'aws-amplify';
-import { Routes, Route, BrowserRouter, Link } from 'react-router-dom';
-import EventList from './pages/EventList.tsx';
-import CreateEvent from './pages/CreateEvent.tsx';
-import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
+import { useState, useEffect } from "react";
+import { Amplify } from "aws-amplify";
+import { getCurrentUser, signOut as amplifySignOut } from "aws-amplify/auth";
+import { Hub } from "aws-amplify/utils";
+import { Routes, Route, BrowserRouter, Link, useLocation } from "react-router-dom";
+import AuthPage from "./pages/AuthPage.tsx";
+import EventList from "./pages/EventList.tsx";
+import CreateEvent from "./pages/CreateEvent.tsx";
+import EventWorkspace from "./pages/EventWorkspace.tsx";
+import EventDetails from "./pages/EventDetails.tsx";
 
 Amplify.configure({
   Auth: {
     Cognito: {
       userPoolId: import.meta.env.VITE_USER_POOL_ID,
-      userPoolClientId: import.meta.env.VITE_CLIENT_ID
-    }
-  }
+      userPoolClientId: import.meta.env.VITE_CLIENT_ID,
+    },
+  },
 });
 
-function AppContent() {
-  const { signOut, user } = useAuthenticator();
+// ─── Nav Link ─────────────────────────────────────────────────────────────────
 
+function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
+  const { pathname } = useLocation();
+  const active = pathname === to;
+  return (
+    <Link
+      to={to}
+      className={`text-sm font-medium transition-colors ${
+        active ? "text-indigo-600" : "text-gray-500 hover:text-gray-900"
+      }`}
+    >
+      {children}
+    </Link>
+  );
+}
+
+// ─── Loading Screen ───────────────────────────────────────────────────────────
+
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <div className="flex flex-col items-center gap-4">
+        <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center animate-pulse">
+          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </div>
+        <p className="text-sm text-gray-400">Loading MidMeet…</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── App Shell (authenticated) ────────────────────────────────────────────────
+
+function AppContent({
+  username,
+  onSignOut,
+}: {
+  username: string;
+  onSignOut: () => void;
+}) {
   return (
     <BrowserRouter>
-      <div className="max-w-2xl mx-auto p-6">
-        <h1 className="text-3xl font-bold mb-4">Welcome {user?.username}</h1>
+      <div className="min-h-screen bg-gray-50">
 
-        <nav className="flex items-center gap-4 mb-6">
-          <Link to="/" className="text-blue-600 hover:underline">Events</Link>
-          <Link to="/create" className="text-blue-600 hover:underline">Create Event</Link>
-          <button onClick={signOut} className="ml-auto text-sm text-gray-500 hover:text-gray-800">Sign Out</button>
-        </nav>
+        {/* Navbar */}
+        <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
+          <div className="max-w-6xl mx-auto px-6 h-14 flex items-center gap-6">
+            <Link to="/" className="flex items-center gap-2 group">
+              <div className="w-7 h-7 rounded-lg bg-indigo-600 group-hover:bg-indigo-700 flex items-center justify-center transition-colors">
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <span className="font-bold text-gray-900 text-base tracking-tight">MidMeet</span>
+            </Link>
 
-        <Routes>
-          <Route path="/" element={<EventList />} />
-          <Route path="/create" element={<CreateEvent />} />
-        </Routes>
+            <nav className="flex items-center gap-5">
+              <NavLink to="/">Events</NavLink>
+              <NavLink to="/create">Create</NavLink>
+            </nav>
+
+            <div className="ml-auto flex items-center gap-3">
+              <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
+                <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-semibold text-indigo-600">
+                  {username[0]?.toUpperCase()}
+                </div>
+                {username}
+              </div>
+              <button
+                onClick={onSignOut}
+                className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-all"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main>
+          <Routes>
+            <Route path="/" element={<EventList />} />
+            <Route path="/create" element={<CreateEvent />} />
+            <Route path="/events/:eventId/workspace" element={<EventWorkspace />} />
+            <Route path="/events/:eventId/details" element={<EventDetails />} />
+          </Routes>
+        </main>
+
       </div>
     </BrowserRouter>
   );
 }
 
+// ─── Root App ─────────────────────────────────────────────────────────────────
+
 export default function App() {
-  return (
-    <Authenticator>
-      <AppContent />
-    </Authenticator>
-  );
+  const [status, setStatus] = useState<"loading" | "authed" | "unauthed">("loading");
+  const [username, setUsername] = useState("");
+
+  async function checkAuth() {
+    try {
+      const user = await getCurrentUser();
+      setUsername(user.username);
+      setStatus("authed");
+    } catch {
+      setStatus("unauthed");
+    }
+  }
+
+  useEffect(() => {
+    checkAuth();
+    const unsub = Hub.listen("auth", ({ payload }) => {
+      if (payload.event === "signedIn") checkAuth();
+      if (payload.event === "signedOut") { setStatus("unauthed"); setUsername(""); }
+    });
+    return unsub;
+  }, []);
+
+  async function handleSignOut() {
+    await amplifySignOut();
+    setStatus("unauthed");
+    setUsername("");
+  }
+
+  if (status === "loading") return <LoadingScreen />;
+  if (status === "unauthed") return <AuthPage onAuthenticated={checkAuth} />;
+  return <AppContent username={username} onSignOut={handleSignOut} />;
 }
