@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useAuthenticator } from "@aws-amplify/ui-react";
+import { getCurrentUser } from "aws-amplify/auth";
 import {
   fetchEventById,
   fetchCommonTimes,
@@ -212,7 +212,10 @@ function VenueCard({
 export default function EventWorkspace() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuthenticator();
+  const [currentUsername, setCurrentUsername] = useState("");
+  useEffect(() => {
+    getCurrentUser().then(u => setCurrentUsername(u.username)).catch(() => {});
+  }, []);
 
   const [activeTab, setActiveTab] = useState<"availability" | "venue">("availability");
   const [event, setEvent] = useState<EventDetail | null>(null);
@@ -280,14 +283,14 @@ export default function EventWorkspace() {
   }, []);
 
   async function handleSubmitAvailability() {
-    if (!eventId || !user?.username) return;
+    if (!eventId) return;
     setSubmitting(true);
     // slotKey format: "YYYY-MM-DD-HH" — split on last dash
     const slots: TimeSlot[] = Array.from(selectedSlots).map(key => {
       const lastDash = key.lastIndexOf("-");
       return { date: key.slice(0, lastDash), startHour: parseInt(key.slice(lastDash + 1)) };
     });
-    await submitAvailability(eventId, user.username, slots);
+    await submitAvailability(eventId, currentUsername, slots);
     setSubmitting(false);
     setSubmitted(true);
   }
