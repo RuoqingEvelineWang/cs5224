@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { signIn, signUp, confirmSignUp } from "aws-amplify/auth";
+import { signIn, signUp, confirmSignUp, signOut } from "aws-amplify/auth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -223,6 +223,12 @@ function SignInForm({
     if (!fields.username || !fields.password) { setError("Please fill in all fields."); return; }
     setLoading(true);
     try {
+      // Workaround: clear any stale Amplify session before signing in.
+      // This prevents "There is already a signed in user" errors that occur
+      // when a Cognito account is deleted while a local session still exists.
+      // For example, if a user is deleted in the AWS console, the local session
+      // will not be cleared, and the user will not be able to sign in again.
+      await signOut().catch(() => { });
       await signIn({ username: fields.username, password: fields.password });
       onSuccess();
     } catch (e: unknown) {

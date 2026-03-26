@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Amplify } from "aws-amplify";
-import { getCurrentUser, signOut as amplifySignOut } from "aws-amplify/auth";
+import { getCurrentUser, fetchUserAttributes, signOut as amplifySignOut } from "aws-amplify/auth";
 import { Hub } from "aws-amplify/utils";
 import { Routes, Route, BrowserRouter, Link, useLocation } from "react-router-dom";
 import AuthPage from "./pages/AuthPage.tsx";
@@ -8,6 +8,8 @@ import EventList from "./pages/EventList.tsx";
 import CreateEvent from "./pages/CreateEvent.tsx";
 import EventWorkspace from "./pages/EventWorkspace.tsx";
 import EventDetails from "./pages/EventDetails.tsx";
+import OnboardingPage from "./pages/OnboardingPage.tsx";
+import { fetchCurrentUser, createUser } from "./api/User.tsx";
 
 Amplify.configure({
   Auth: {
@@ -56,10 +58,10 @@ function LoadingScreen() {
 // ─── App Shell (authenticated) ────────────────────────────────────────────────
 
 function AppContent({
-  username,
+  displayName,
   onSignOut,
 }: {
-  username: string;
+  displayName: string;
   onSignOut: () => void;
 }) {
   return (
@@ -87,9 +89,9 @@ function AppContent({
             <div className="ml-auto flex items-center gap-3">
               <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
                 <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-semibold text-indigo-600">
-                  {username[0]?.toUpperCase()}
+                  {displayName[0]?.toUpperCase()}
                 </div>
-                {username}
+                {displayName}
               </div>
               <button
                 onClick={onSignOut}
@@ -119,14 +121,30 @@ function AppContent({
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [status, setStatus] = useState<"loading" | "authed" | "unauthed">("loading");
-  const [username, setUsername] = useState("");
+  const [status, setStatus] = useState<"loading" | "onboarding" | "authed" | "unauthed">("loading");
+  const [userId, setUserId] = useState("");
+  const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
 
   async function checkAuth() {
     try {
       const user = await getCurrentUser();
-      setUsername(user.username);
-      setStatus("authed");
+      const attrs = await fetchUserAttributes();
+      setUserId(user.userId);
+      setEmail(attrs.email ?? "");
+      let profile = await fetchCurrentUser(user.userId);
+      if (!profile) {
+        // Simulate the Post-Confirmation trigger seeding the user record.
+        // In production this is done by the backend Lambda, not the frontend.
+        await createUser(user.userId, attrs.name ?? user.username, attrs.email ?? "");
+        profile = await fetchCurrentUser(user.userId);
+      }
+      if (!profile?.address) {
+        setStatus("onboarding");
+      } else {
+        setDisplayName(profile.name);
+        setStatus("authed");
+      }
     } catch {
       setStatus("unauthed");
     }
@@ -136,7 +154,12 @@ export default function App() {
     checkAuth();
     const unsub = Hub.listen("auth", ({ payload }) => {
       if (payload.event === "signedIn") checkAuth();
-      if (payload.event === "signedOut") { setStatus("unauthed"); setUsername(""); }
+      if (payload.event === "signedOut") {
+        setStatus("unauthed");
+        setUserId("");
+        setEmail("");
+        setDisplayName("");
+      }
     });
     return unsub;
   }, []);
@@ -144,10 +167,28 @@ export default function App() {
   async function handleSignOut() {
     await amplifySignOut();
     setStatus("unauthed");
-    setUsername("");
+    setUserId("");
+    setEmail("");
+    setDisplayName("");
+  }
+
+  function handleOnboardingComplete() {
+    fetchCurrentUser(userId).then(profile => {
+      setDisplayName(profile?.name ?? "");
+      setStatus("authed");
+    });
   }
 
   if (status === "loading") return <LoadingScreen />;
   if (status === "unauthed") return <AuthPage onAuthenticated={checkAuth} />;
-  return <AppContent username={username} onSignOut={handleSignOut} />;
+  if (status === "onboarding") {
+    return (
+      <OnboardingPage
+        userId={userId}
+        email={email}
+        onComplete={handleOnboardingComplete}
+      />
+    );
+  }
+  return <AppContent displayName={displayName} onSignOut={handleSignOut} />;
 }
