@@ -9,6 +9,7 @@ import CreateEvent from "./pages/CreateEvent.tsx";
 import EventWorkspace from "./pages/EventWorkspace.tsx";
 import EventDetails from "./pages/EventDetails.tsx";
 import OnboardingPage from "./pages/OnboardingPage.tsx";
+import ProfilePage from "./pages/ProfilePage.tsx";
 import { fetchCurrentUser, createUser } from "./api/User.tsx";
 
 Amplify.configure({
@@ -58,11 +59,15 @@ function LoadingScreen() {
 // ─── App Shell (authenticated) ────────────────────────────────────────────────
 
 function AppContent({
+  userId,
   displayName,
   onSignOut,
+  onDisplayNameChange,
 }: {
+  userId: string;
   displayName: string;
   onSignOut: () => void;
+  onDisplayNameChange: (name: string) => void;
 }) {
   return (
     <BrowserRouter>
@@ -87,12 +92,12 @@ function AppContent({
             </nav>
 
             <div className="ml-auto flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-2 text-sm text-gray-500">
+              <Link to="/profile" className="hidden sm:flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors">
                 <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-semibold text-indigo-600">
                   {displayName[0]?.toUpperCase()}
                 </div>
                 {displayName}
-              </div>
+              </Link>
               <button
                 onClick={onSignOut}
                 className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-all"
@@ -110,6 +115,7 @@ function AppContent({
             <Route path="/create" element={<CreateEvent />} />
             <Route path="/events/:eventId/workspace" element={<EventWorkspace />} />
             <Route path="/events/:eventId/details" element={<EventDetails />} />
+            <Route path="/profile" element={<ProfilePage userId={userId} onNameChange={onDisplayNameChange} />} />
           </Routes>
         </main>
 
@@ -190,5 +196,12 @@ export default function App() {
       />
     );
   }
-  return <AppContent displayName={displayName} onSignOut={handleSignOut} />;
+  return (
+    <AppContent
+      userId={userId}
+      displayName={displayName}
+      onSignOut={handleSignOut}
+      onDisplayNameChange={setDisplayName}
+    />
+  );
 }
