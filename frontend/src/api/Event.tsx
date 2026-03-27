@@ -90,7 +90,7 @@ export async function submitAvailability(
   return new Promise(resolve => setTimeout(resolve, 600));
 }
 
-export async function fetchCommonTimes(eventId: string): Promise<CommonTime[]> {
+export async function fetchCommonTimes(_eventId: string): Promise<CommonTime[]> {
   return new Promise(resolve => {
     setTimeout(() => {
       resolve([
@@ -108,7 +108,7 @@ export async function fetchCommonTimes(eventId: string): Promise<CommonTime[]> {
   });
 }
 
-export async function fetchVenues(eventId: string): Promise<Venue[]> {
+export async function fetchVenues(_eventId: string): Promise<Venue[]> {
   return new Promise(resolve => {
     setTimeout(() => {
       resolve([
