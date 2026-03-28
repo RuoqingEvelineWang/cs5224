@@ -11,6 +11,7 @@ import EventWorkspace from './pages/EventWorkspace.tsx';
 import EventDetails from './pages/EventDetails.tsx';
 import OnboardingPage from './pages/OnboardingPage.tsx';
 import ProfilePage from './pages/ProfilePage.tsx';
+import FriendsManagementPage from './pages/FriendsManagementPage.tsx';
 import { fetchCurrentUser, createUser } from './api/User.tsx';
 
 Amplify.configure({
@@ -89,6 +90,7 @@ function AppContent({
 
             <nav className="flex items-center gap-5">
               <NavLink to="/">Dashboard</NavLink>
+              <NavLink to="/friends">Friends</NavLink>
               <NavLink to="/events/new">New Event</NavLink>
               <NavLink to="/create">Legacy Create</NavLink>
             </nav>
@@ -116,6 +118,7 @@ function AppContent({
         <main>
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/friends" element={<FriendsManagementPage />} />
             <Route path="/events/new" element={<EventCreationWizard />} />
             <Route path="/create" element={<CreateEvent />} />
             <Route path="/events/:eventId/workspace" element={<EventWorkspace />} />

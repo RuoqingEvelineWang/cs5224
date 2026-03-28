@@ -100,7 +100,13 @@ export class CdkStack extends cdk.Stack {
     eventMembersTable.grantReadWriteData(apiLambda);
 
     // API Gateway
-    const api = new apigateway.RestApi(this, 'EventsApi');
+    const api = new apigateway.RestApi(this, 'EventsApi', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
+        allowHeaders: ['Content-Type', 'Authorization'],
+      },
+    });
 
     const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda);
     const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
@@ -108,6 +114,32 @@ export class CdkStack extends cdk.Stack {
     });
 
     api.root.addResource('events').addMethod('GET', lambdaIntegration, {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    const friendsResource = api.root.addResource('friends');
+    const friendRequestResource = friendsResource.addResource('request');
+    const friendAcceptResource = friendsResource.addResource('accept');
+    const friendByUserResource = friendsResource.addResource('{userId}');
+    const friendSuggestionsResource = friendsResource.addResource('suggestions').addResource('{userId}');
+
+    friendRequestResource.addMethod('POST', lambdaIntegration, {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    friendAcceptResource.addMethod('PUT', lambdaIntegration, {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    friendByUserResource.addMethod('GET', lambdaIntegration, {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    friendSuggestionsResource.addMethod('GET', lambdaIntegration, {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
