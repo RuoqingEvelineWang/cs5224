@@ -1,6 +1,10 @@
 {
   "name": "cdk",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
   "bin": {
     "cdk": "bin/cdk.js"
   },
