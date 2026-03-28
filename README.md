@@ -1,3 +1,4 @@
+# MidMeet
 ## Introduction
 This repo consists of a skeleton for the following:
  - frontend: Uses react, vite and Amazon Amplify (connected to Cognito). Has a default sign up/log in page and homepage.
