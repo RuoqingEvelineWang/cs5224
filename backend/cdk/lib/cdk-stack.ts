@@ -9,64 +9,136 @@ export class CdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // 🔹 DynamoDB Tables
-    const eventsTable = new dynamodb.Table(this, 'EventsTable', {
-      partitionKey: { name: 'ownerId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'eventId', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-    });
+    const appName = 'midmeet';
+    const stage = (this.node.tryGetContext('stage') ?? 'dev') as 'dev' | 'prod';
+    const prefix = `${appName}-${stage}`;
+    const removalPolicy =
+      stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
 
+    // DynamoDB Tables
     const usersTable = new dynamodb.Table(this, 'UsersTable', {
+      tableName: `${prefix}-users`,
       partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy,
     });
 
-    // 🔹 Cognito
+    usersTable.addGlobalSecondaryIndex({
+      indexName: 'email-index',
+      partitionKey: { name: 'email', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    const friendshipsTable = new dynamodb.Table(this, 'FriendshipsTable', {
+      tableName: `${prefix}-friendships`,
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'friendId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy,
+    });
+
+    const eventsTable = new dynamodb.Table(this, 'EventsTable', {
+      tableName: `${prefix}-events`,
+      partitionKey: { name: 'eventId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy,
+    });
+
+    eventsTable.addGlobalSecondaryIndex({
+      indexName: 'creatorId-createdAt-index',
+      partitionKey: { name: 'creatorId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    const eventMembersTable = new dynamodb.Table(this, 'EventMembersTable', {
+      tableName: `${prefix}-event-members`,
+      partitionKey: { name: 'eventId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      pointInTimeRecovery: true,
+      removalPolicy,
+    });
+
+    eventMembersTable.addGlobalSecondaryIndex({
+      indexName: 'userId-createdAt-index',
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Cognito
     const userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: true,
-      signInAliases: { email: true }
+      signInAliases: { email: true },
     });
 
     const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
-      userPool
+      userPool,
     });
 
-    // 🔹 Lambda
+    // Lambda
     const apiLambda = new lambda.Function(this, 'ApiLambda', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
       code: lambda.Code.fromAsset('../lambda'),
       environment: {
-        EVENTS_TABLE: eventsTable.tableName,
+        STAGE: stage,
         USERS_TABLE: usersTable.tableName,
-      }
+        FRIENDSHIPS_TABLE: friendshipsTable.tableName,
+        EVENTS_TABLE: eventsTable.tableName,
+        EVENT_MEMBERS_TABLE: eventMembersTable.tableName,
+      },
     });
 
-    eventsTable.grantReadWriteData(apiLambda);
     usersTable.grantReadWriteData(apiLambda);
+    friendshipsTable.grantReadWriteData(apiLambda);
+    eventsTable.grantReadWriteData(apiLambda);
+    eventMembersTable.grantReadWriteData(apiLambda);
 
-    // 🔹 API Gateway
+    // API Gateway
     const api = new apigateway.RestApi(this, 'EventsApi');
 
     const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda);
-
-    api.root.addResource('events').addMethod('GET', lambdaIntegration, {
-      authorizer: new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
-        cognitoUserPools: [userPool]
-      })
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
+      cognitoUserPools: [userPool],
     });
 
-    // 🔹 Outputs
+    api.root.addResource('events').addMethod('GET', lambdaIntegration, {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    // Outputs
+    new cdk.CfnOutput(this, 'UsersTableName', {
+      value: usersTable.tableName,
+    });
+
+    new cdk.CfnOutput(this, 'FriendshipsTableName', {
+      value: friendshipsTable.tableName,
+    });
+
+    new cdk.CfnOutput(this, 'EventsTableName', {
+      value: eventsTable.tableName,
+    });
+
+    new cdk.CfnOutput(this, 'EventMembersTableName', {
+      value: eventMembersTable.tableName,
+    });
+
     new cdk.CfnOutput(this, 'UserPoolId', {
-      value: userPool.userPoolId
+      value: userPool.userPoolId,
     });
 
     new cdk.CfnOutput(this, 'UserPoolClientId', {
-      value: userPoolClient.userPoolClientId
+      value: userPoolClient.userPoolClientId,
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', {
-      value: api.url
+      value: api.url,
     });
   }
 }
