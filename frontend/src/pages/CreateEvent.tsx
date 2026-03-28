@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createEvent } from "../api/Event.tsx";
+import { createFullEvent } from "../api/Event.tsx";
 
 type Friend = {
   id: string;
@@ -24,7 +24,7 @@ export default function CreateEvent() {
   }
 
   async function handleCreate() {
-    await createEvent(selected);
+    await createFullEvent({ title: 'New Event', participantIds: selected, participantNames: selected, venueType: 'Cafe', dateRange: { start: '', end: '' }, isPublic: false });
     alert("Event created (placeholder)");
   }
 
