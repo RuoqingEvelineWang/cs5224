@@ -1,6 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+
 
 export class CdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -57,9 +61,63 @@ export class CdkStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+
+    // Cognito
+    const userPool = new cognito.UserPool(this, 'UserPool', {
+      selfSignUpEnabled: true,
+      signInAliases: { email: true }
+    });
+
+    const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
+      userPool
+    });
+
+    // Lambda
+    const apiLambda = new lambda.Function(this, 'ApiLambda', {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset('../lambda'),
+      environment: {
+        MAIN_TABLE: mainTable.tableName,
+        MAIN_TABLE_GSI1: 'GSI1',
+        MAIN_TABLE_GSI2: 'GSI2',
+      }
+    });
+
+    mainTable.grantReadWriteData(apiLambda);
+
+    // API Gateway
+    const api = new apigateway.RestApi(this, 'EventsApi', {
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: apigateway.Cors.ALL_METHODS,
+        allowHeaders: ['Authorization', 'Content-Type'],
+      },
+    });
+
+    const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda);
+
+    api.root.addResource('events').addMethod('GET', lambdaIntegration, {
+      authorizer: new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
+        cognitoUserPools: [userPool]
+      })
+    });
+
     // Output the Table Name for reference
     new cdk.CfnOutput(this, 'MainTableName', {
       value: mainTable.tableName,
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolId', {
+      value: userPool.userPoolId
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolClientId', {
+      value: userPoolClient.userPoolClientId
+    });
+
+    new cdk.CfnOutput(this, 'ApiUrl', {
+      value: api.url
     });
   }
 }
