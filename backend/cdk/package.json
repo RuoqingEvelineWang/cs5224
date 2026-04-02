@@ -12,18 +12,21 @@
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "seed": "MAIN_TABLE=midmeet-dev-main ts-node scripts/seed.ts"
   },
   "devDependencies": {
     "@types/jest": "^30",
     "@types/node": "^24.10.1",
+    "aws-cdk": "2.1109.0",
     "jest": "^30",
     "ts-jest": "^29",
-    "aws-cdk": "2.1109.0",
     "ts-node": "^10.9.2",
     "typescript": "~5.9.3"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1022.0",
+    "@aws-sdk/lib-dynamodb": "^3.1022.0",
     "aws-cdk-lib": "^2.241.0",
     "constructs": "^10.5.0"
   }

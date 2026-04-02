@@ -1,0 +1,34 @@
+[
+  {
+    "PK": "EVENT#evt-001",
+    "SK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "Type": "EventMember",
+    "GSI1PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "GSI1SK": "EVENT#evt-001",
+    "inviteStatus": "ACCEPTED",
+    "role": "CREATOR"
+  },
+  {
+    "PK": "EVENT#evt-001",
+    "SK": "METADATA",
+    "Type": "EventInfo",
+    "dateRange": {
+      "start": "2026-04-15",
+      "end": "2026-04-20"
+    },
+    "status": "COLLECTING_AVAILABILITY",
+    "title": "Badminton Meetup",
+    "venueType": "Sports Hall"
+  },
+  {
+    "PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "SK": "PROFILE",
+    "Type": "UserProfile",
+    "approxArea": "Jurong East",
+    "email": "alice@example.com",
+    "name": "Alice",
+    "transportType": "MRT",
+    "GSI2PK": "EMAIL#alice@example.com",
+    "GSI2SK": "PROFILE"
+  }
+]
