@@ -57,9 +57,11 @@ If no stage is provided, `cdk-stack.ts` defaults to `dev`.
    - dev: `npx cdk deploy -c stage=dev`
    - prod: `npx cdk deploy -c stage=prod`
 5. After deployment, CDK outputs values such as `UserPoolId`, `UserPoolClientId`, and `ApiUrl`. Copy the required values into the frontend `.env` file for authentication and API access.
-6. Run the following command inside **/frontend** to install dependencies strictly according to `package-lock.json`:
+6. Run this command inside **/backend/cdk** to fill test data for dynamoDB:
+   - `npm run seed`
+7. Run the following command inside **/frontend** to install dependencies strictly according to `package-lock.json`:
    - `npm ci`
-7. Run the following command inside **/frontend** to start front end and get url:
+8. Run the following command inside **/frontend** to start front end and get url:
    - `npm run dev`
 
 ## Development steps
@@ -67,11 +69,13 @@ If no stage is provided, `cdk-stack.ts` defaults to `dev`.
    - `npx cdk deploy -c stage=dev` for the shared development environment
    - `npx cdk deploy -c stage=prod` for the production/demo environment
    Some infrastructure changes may require recreating resources.
-2. If you update `backend/cdk/lib/cdk-stack.ts`, mention in your PR whether the change affects:
+2. If test data is needed, refill data using the same command in **/backend/cdk**:
+   - `npm run seed`
+3. If you update `backend/cdk/lib/cdk-stack.ts`, mention in your PR whether the change affects:
    - DynamoDB table names or indexes
    - Lambda environment variables
    - Cognito outputs used by the frontend
    - API Gateway endpoints
-3. If frontend code is updated, the React dev server will refresh automatically.
-4. If you pull new changes and `package-lock.json` has changed, run `npm ci` again inside **/frontend**.
-5. If you intentionally add or upgrade frontend dependencies, use `npm install <package-name>` inside **/frontend**, then commit both `package.json` and `package-lock.json`.
+4. If frontend code is updated, the React dev server will refresh automatically.
+5. If you pull new changes and `package-lock.json` has changed, run `npm ci` again inside **/frontend**.
+6. If you intentionally add or upgrade frontend dependencies, use `npm install <package-name>` inside **/frontend**, then commit both `package.json` and `package-lock.json`.
