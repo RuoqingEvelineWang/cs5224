@@ -81,12 +81,15 @@ export class CdkStack extends cdk.Stack {
         MAIN_TABLE: mainTable.tableName,
         MAIN_TABLE_GSI1: 'GSI1',
         MAIN_TABLE_GSI2: 'GSI2',
+        ONEMAP_EMAIL: process.env.ONEMAP_EMAIL || '',
+        ONEMAP_PASSWORD: process.env.ONEMAP_PASSWORD || '',
       }
     });
 
     mainTable.grantReadWriteData(apiLambda);
 
     // API Gateway
+    // API Gateway setup
     const api = new apigateway.RestApi(this, 'EventsApi', {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
@@ -96,12 +99,24 @@ export class CdkStack extends cdk.Stack {
     });
 
     const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda);
-
-    api.root.addResource('events').addMethod('GET', lambdaIntegration, {
-      authorizer: new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
-        cognitoUserPools: [userPool]
-      })
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
+      cognitoUserPools: [userPool]
     });
+
+    // GET /events
+    const eventsResource = api.root.addResource('events');
+    eventsResource.addMethod('GET', lambdaIntegration, { authorizer });
+
+    // GET /events/{id}
+    const singleEventResource = eventsResource.addResource('{id}');
+    singleEventResource.addMethod('GET', lambdaIntegration, { authorizer });
+
+    // POST /events
+    eventsResource.addMethod('POST', lambdaIntegration, { authorizer });
+
+    // GET /friends
+    const friendsResource = api.root.addResource('friends');
+    friendsResource.addMethod('GET', lambdaIntegration, { authorizer });
 
     // Output the Table Name for reference
     new cdk.CfnOutput(this, 'MainTableName', {

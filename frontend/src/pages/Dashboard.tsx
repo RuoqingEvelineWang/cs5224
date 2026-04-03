@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { fetchDashboardData } from '../api/eventService';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { STATUS_LABELS, STATUS_COLORS } from '../api/Event.tsx';
-import type { DashboardData } from '../types/event';
+import type { EventDetail } from '../api/Event.tsx';
 
 const VENUE_ICONS: Record<string, string> = {
   'Sports Hall': '🏸',
@@ -13,8 +13,19 @@ const VENUE_ICONS: Record<string, string> = {
   Library: '📚',
 };
 
+// Formats an ISO string into a readable Singapore time
 function formatDate(iso: string) {
-  return new Intl.DateTimeFormat('en-SG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  try {
+    return new Intl.DateTimeFormat('en-SG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  } catch (e) {
+    return iso; // Fallback if date is malformed
+  }
+}
+
+// Temporary interface for the mapped dashboard data
+interface DashboardData {
+  upcomingEvents: any[];
+  pendingInvites: any[];
 }
 
 export default function Dashboard() {
@@ -23,12 +34,98 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchDashboardData().then(d => { setData(d); setLoading(false); });
+    async function loadDashboardData() {
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        const userId = session.tokens?.idToken?.payload?.sub as string;
+        const apiUrl = import.meta.env.VITE_API_URL;
+
+        if (!token || !apiUrl) {
+          throw new Error('Missing Auth token or API URL');
+        }
+
+        // Fetch all events for this user
+        const response = await fetch(`${apiUrl}/events`, {
+          method: 'GET',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.statusText}`);
+        }
+
+        const { data: responseData } = await response.json();
+        const allEvents = responseData as EventDetail[];
+
+        // 1. Extract Pending Invites
+        const pending = allEvents
+          .filter(e => 
+            e.status === 'COLLECTING_AVAILABILITY' && 
+            !e.availabilitySubmittedBy?.includes(userId) && 
+            e.creatorId !== userId &&
+            !e.declinedUserIds?.includes(userId)
+          )
+          .map(e => ({
+            eventId: e.eventId,
+            title: e.title,
+            venueType: e.venueType,
+            fromUser: e.creatorName || e.creatorId,
+            dateRange: e.dateRange
+          }));
+
+        // 2. Extract Upcoming Events (Awaiting Confirmation or Finalized)
+        const upcoming = allEvents
+          .filter(e => 
+            (e.status === 'FINALIZED' || e.status === 'AWAITING_CONFIRMATION') &&
+            !e.declinedUserIds?.includes(userId)
+          )
+          .map(e => {
+            // Convert the DB's selectedTime object into an ISO string for formatting
+            let isoTime = '';
+            if (e.selectedTime) {
+              const hour = e.selectedTime.startHour.toString().padStart(2, '0');
+              isoTime = `${e.selectedTime.date}T${hour}:00:00+08:00`;
+            } else if (e.dateRange) {
+              isoTime = `${e.dateRange.start}T00:00:00+08:00`;
+            }
+
+            return {
+              eventId: e.eventId,
+              title: e.title,
+              status: e.status,
+              venueType: e.venueType,
+              selectedTime: isoTime,
+              selectedVenue: e.selectedVenue?.name || 'Venue TBD'
+            };
+          })
+          // Sort chronologically and take only the top 3
+          .sort((a, b) => a.selectedTime.localeCompare(b.selectedTime))
+          .slice(0, 3);
+
+        setData({ upcomingEvents: upcoming, pendingInvites: pending });
+
+      } catch (error) {
+        console.error('Failed to load dashboard:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDashboardData();
   }, []);
 
   if (loading) {
-    return <div className="rounded-xl bg-white p-6 shadow-sm text-sm text-gray-500">Loading dashboard…</div>;
+    return (
+      <div className="flex justify-center py-12">
+        <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      </div>
+    );
   }
+  
   if (!data) {
     return <div className="rounded-xl bg-white p-6 shadow-sm text-sm text-gray-500">Unable to load dashboard.</div>;
   }
@@ -67,8 +164,8 @@ export default function Dashboard() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-base">{icon}</span>
                       <span className="font-medium text-stone-800 text-sm flex-1 min-w-0 truncate">{event.title}</span>
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[event.status]}`}>
-                        {STATUS_LABELS[event.status]}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[event.status as keyof typeof STATUS_COLORS]}`}>
+                        {STATUS_LABELS[event.status as keyof typeof STATUS_LABELS]}
                       </span>
                     </div>
                     <p className="text-xs text-stone-500">{event.venueType}</p>
@@ -117,8 +214,8 @@ export default function Dashboard() {
                         {invite.venueType} · invited by <span className="font-medium">{invite.fromUser}</span>
                       </p>
                       <p className="text-xs text-stone-400">
-                        {invite.dateRange.start}
-                        {invite.dateRange.start !== invite.dateRange.end ? ` – ${invite.dateRange.end}` : ''}
+                        {invite.dateRange?.start}
+                        {invite.dateRange?.start !== invite.dateRange?.end ? ` – ${invite.dateRange?.end}` : ''}
                       </p>
                     </div>
                   </div>

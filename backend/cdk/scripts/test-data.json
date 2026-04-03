@@ -26,9 +26,231 @@
     "Type": "UserProfile",
     "approxArea": "Jurong East",
     "email": "alice@example.com",
-    "name": "Alice",
+    "name": "Alice Wong",
     "transportType": "MRT",
     "GSI2PK": "EMAIL#alice@example.com",
     "GSI2SK": "PROFILE"
+  },
+  {
+    "PK": "USER#usr-101",
+    "SK": "PROFILE",
+    "Type": "UserProfile",
+    "name": "Fiona Lim",
+    "email": "fiona.l@example.com",
+    "GSI2PK": "EMAIL#fiona.l@example.com",
+    "GSI2SK": "PROFILE"
+  },
+  {
+    "PK": "USER#usr-102",
+    "SK": "PROFILE",
+    "Type": "UserProfile",
+    "name": "Bob Chen",
+    "email": "bob.c@example.com",
+    "GSI2PK": "EMAIL#bob.c@example.com",
+    "GSI2SK": "PROFILE"
+  },
+  {
+    "PK": "USER#usr-103",
+    "SK": "PROFILE",
+    "Type": "UserProfile",
+    "name": "Charlie Lim",
+    "email": "charlie.lim@example.com",
+    "GSI2PK": "EMAIL#charlie.lim@example.com",
+    "GSI2SK": "PROFILE"
+  },
+  {
+    "PK": "USER#usr-104",
+    "SK": "PROFILE",
+    "Type": "UserProfile",
+    "name": "Diana Tan",
+    "email": "diana.t@example.com",
+    "GSI2PK": "EMAIL#diana.t@example.com",
+    "GSI2SK": "PROFILE"
+  },
+  {
+    "PK": "USER#usr-105",
+    "SK": "PROFILE",
+    "Type": "UserProfile",
+    "name": "Evan Lee",
+    "email": "evan.lee@example.com",
+    "GSI2PK": "EMAIL#evan.lee@example.com",
+    "GSI2SK": "PROFILE"
+  },
+
+  {
+    "PK": "EVENT#evt-002",
+    "SK": "METADATA",
+    "Type": "EventInfo",
+    "title": "Board Game Cafe",
+    "status": "COLLECTING_AVAILABILITY",
+    "creatorId": "usr-103",
+    "venueType": "Cafe",
+    "dateRange": { "start": "2026-04-12", "end": "2026-04-15" }
+  },
+  {
+    "PK": "EVENT#evt-002",
+    "SK": "USER#usr-103",
+    "Type": "EventMember",
+    "role": "CREATOR",
+    "inviteStatus": "ACCEPTED",
+    "hasSubmittedAvailability": true,
+    "availableTimeSlots": ["2026-04-12-14", "2026-04-13-18"],
+    "GSI1PK": "USER#usr-103",
+    "GSI1SK": "EVENT#evt-002"
+  },
+  {
+    "PK": "EVENT#evt-002",
+    "SK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "Type": "EventMember",
+    "role": "PARTICIPANT",
+    "inviteStatus": "PENDING",
+    "hasSubmittedAvailability": false,
+    "GSI1PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "GSI1SK": "EVENT#evt-002"
+  },
+
+  {
+    "PK": "EVENT#evt-003",
+    "SK": "METADATA",
+    "Type": "EventInfo",
+    "title": "Project Sync",
+    "status": "SELECTING_VENUE",
+    "creatorId": "79deb438-5051-701f-227b-2e41b104743e",
+    "venueType": "Library",
+    "dateRange": { "start": "2026-04-14", "end": "2026-04-14" }
+  },
+  {
+    "PK": "EVENT#evt-003",
+    "SK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "Type": "EventMember",
+    "role": "CREATOR",
+    "inviteStatus": "ACCEPTED",
+    "hasSubmittedAvailability": true,
+    "availableTimeSlots": ["2026-04-14-10", "2026-04-14-11"],
+    "GSI1PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "GSI1SK": "EVENT#evt-003"
+  },
+  {
+    "PK": "EVENT#evt-003",
+    "SK": "USER#usr-102",
+    "Type": "EventMember",
+    "role": "PARTICIPANT",
+    "inviteStatus": "PENDING",
+    "hasSubmittedAvailability": true,
+    "availableTimeSlots": ["2026-04-14-10"],
+    "GSI1PK": "USER#usr-102",
+    "GSI1SK": "EVENT#evt-003"
+  },
+  
+  {
+    "PK": "EVENT#evt-004",
+    "SK": "METADATA",
+    "Type": "EventInfo",
+    "title": "Sushi Dinner",
+    "status": "AWAITING_CONFIRMATION",
+    "creatorId": "usr-103",
+    "venueType": "Restaurant",
+    "dateRange": { "start": "2026-04-18", "end": "2026-04-18" },
+    "selectedTime": { "date": "2026-04-18", "startHour": 19 },
+    "selectedVenue": { "name": "Genki Sushi Orchard", "distanceKm": 2.5, "rating": 4.1, "estimatedMinutes": 22, "address": "313 Orchard Rd, B2-03, Singapore 238895" }
+  },
+  {
+    "PK": "EVENT#evt-004",
+    "SK": "USER#usr-103",
+    "Type": "EventMember",
+    "role": "CREATOR",
+    "inviteStatus": "ACCEPTED",
+    "hasSubmittedAvailability": true,
+    "GSI1PK": "USER#usr-103",
+    "GSI1SK": "EVENT#evt-004"
+  },
+  {
+    "PK": "EVENT#evt-004",
+    "SK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "Type": "EventMember",
+    "role": "PARTICIPANT",
+    "inviteStatus": "PENDING",
+    "hasSubmittedAvailability": true,
+    "GSI1PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "GSI1SK": "EVENT#evt-004"
+  },
+
+  {
+    "PK": "EVENT#evt-005",
+    "SK": "METADATA",
+    "Type": "EventInfo",
+    "title": "MacRitchie Hike",
+    "status": "FINALIZED",
+    "creatorId": "usr-102",
+    "venueType": "Park",
+    "dateRange": { "start": "2026-04-20", "end": "2026-04-20" },
+    "selectedTime": { "date": "2026-04-20", "startHour": 8 },
+    "selectedVenue": { "name": "MacRitchie Reservoir", "distanceKm": 5.0, "rating": 4.5, "estimatedMinutes": 35, "address": "Lornie Rd, Singapore 298735" }
+  },
+  {
+    "PK": "EVENT#evt-005",
+    "SK": "USER#usr-102",
+    "Type": "EventMember",
+    "role": "CREATOR",
+    "inviteStatus": "ACCEPTED",
+    "hasSubmittedAvailability": true,
+    "GSI1PK": "USER#usr-102",
+    "GSI1SK": "EVENT#evt-005"
+  },
+  {
+    "PK": "EVENT#evt-005",
+    "SK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "Type": "EventMember",
+    "role": "PARTICIPANT",
+    "inviteStatus": "ACCEPTED",
+    "hasSubmittedAvailability": true,
+    "GSI1PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "GSI1SK": "EVENT#evt-005"
+  },
+
+  {
+    "PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "SK": "FRIEND#usr-101",
+    "Type": "FriendLink",
+    "friendId": "usr-101",
+    "name": "Fiona Lim",
+    "email": "fiona.l@example.com",
+    "hobbies": ["Books", "Library"]
+  },
+  {
+    "PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "SK": "FRIEND#usr-102",
+    "Type": "FriendLink",
+    "friendId": "usr-102",
+    "name": "Bob Chen",
+    "email": "bob.c@example.com",
+    "hobbies": ["Music", "Brunch"]
+  },
+  {
+    "PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "SK": "FRIEND#usr-103",
+    "Type": "FriendLink",
+    "friendId": "usr-103",
+    "name": "Charlie Lim",
+    "email": "charlie.lim@example.com",
+    "hobbies": ["Hiking", "Photography"]
+  },
+  {
+    "PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "SK": "FRIEND#usr-104",
+    "Type": "FriendLink",
+    "friendId": "usr-104",
+    "name": "Diana Tan",
+    "email": "diana.t@example.com",
+    "hobbies": ["Bouldering", "Badminton"]
+  },
+  {
+    "PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "SK": "FRIEND#usr-105",
+    "Type": "FriendLink",
+    "friendId": "usr-105",
+    "name": "Evan Lee",
+    "email": "evan.lee@example.com",
+    "hobbies": ["Cafe Hopping", "Board Games", "Photography"]
   }
 ]
