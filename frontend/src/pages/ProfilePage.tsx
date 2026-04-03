@@ -30,6 +30,7 @@ function ProfileTab({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [copiedUserId, setCopiedUserId] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -56,6 +57,25 @@ function ProfileTab({
     finally { setSaving(false); }
   }
 
+  async function handleCopyUserId() {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(userId);
+      } else {
+        const tempInput = document.createElement("input");
+        tempInput.value = userId;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        document.execCommand("copy");
+        document.body.removeChild(tempInput);
+      }
+      setCopiedUserId(true);
+      setTimeout(() => setCopiedUserId(false), 1800);
+    } catch {
+      setError("Unable to copy user ID. Please copy manually.");
+    }
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center min-h-[40vh]"><div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" /></div>;
   }
@@ -68,6 +88,20 @@ function ProfileTab({
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
           <div className="px-3.5 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-500">{profile?.email}</div>
           <p className="mt-1 text-xs text-gray-400">Email cannot be changed here.</p>
+        </div>
+        <div>
+          <div className="flex items-center justify-between gap-3 mb-1.5">
+            <label className="block text-sm font-medium text-gray-700">User ID</label>
+            <button
+              type="button"
+              onClick={handleCopyUserId}
+              className="px-2.5 py-1 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50"
+            >
+              {copiedUserId ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <div className="px-3.5 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm text-gray-600 break-all">{userId}</div>
+          <p className="mt-1 text-xs text-gray-400">Use this ID in the Friends page to send requests.</p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Name <span className="text-red-500">*</span></label>
