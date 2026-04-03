@@ -1,68 +1,38 @@
 import type {
-  CreateEventInput,
   DashboardData,
   EventSummary,
   FriendProfile,
   InviteSummary,
   NotificationItem,
+  VenueType,
 } from '../types/event';
+import {
+  readEventStore,
+  createFullEvent,
+  CURRENT_USER_ID,
+} from './Event.tsx';
 
-const STORAGE_KEY = 'teamup-dashboard-events';
+// ─── Static Data ───────────────────────────────────────────────────────────────
 
-const CURRENT_USER_ID = 'u-current';
-
-const FRIENDS: FriendProfile[] = [
-  { userId: 'u-alice', name: 'Alice', interests: ['Food', 'Cafe', 'Board Games'] },
-  { userId: 'u-bob', name: 'Bob', interests: ['Hiking', 'Photography', 'Park'] },
+export const FRIENDS: FriendProfile[] = [
+  { userId: 'u-alice',   name: 'Alice',   interests: ['Food', 'Cafe', 'Board Games'] },
+  { userId: 'u-bob',     name: 'Bob',     interests: ['Hiking', 'Photography', 'Park'] },
   { userId: 'u-charlie', name: 'Charlie', interests: ['Music', 'Brunch', 'Cafe'] },
-  { userId: 'u-daisy', name: 'Daisy', interests: ['Books', 'Library', 'Tea'] },
-  { userId: 'u-ethan', name: 'Ethan', interests: ['Movies', 'Mall', 'Restaurant'] },
+  { userId: 'u-daisy',   name: 'Daisy',   interests: ['Books', 'Library', 'Tea'] },
+  { userId: 'u-ethan',   name: 'Ethan',   interests: ['Movies', 'Mall', 'Restaurant'] },
 ];
 
-const DEFAULT_EVENTS: EventSummary[] = [
+const STATIC_NOTIFICATIONS: NotificationItem[] = [
   {
-    eventId: 'evt-1001',
-    creatorId: 'u-alice',
-    participantIds: [CURRENT_USER_ID, 'u-alice', 'u-bob'],
-    participantNames: ['You', 'Alice', 'Bob'],
-    venueType: 'Cafe',
-    selectedTime: '2026-03-28T10:30:00Z',
-    selectedVenue: 'Morning Bean @ Bugis',
-    status: 'CONFIRMED',
-  },
-  {
-    eventId: 'evt-1002',
-    creatorId: CURRENT_USER_ID,
-    participantIds: [CURRENT_USER_ID, 'u-charlie'],
-    participantNames: ['You', 'Charlie'],
-    venueType: 'Park',
-    selectedTime: '2026-03-30T01:00:00Z',
-    selectedVenue: 'East Coast Park',
-    status: 'PLANNING',
-  },
-];
-
-const DEFAULT_INVITES: InviteSummary[] = [
-  {
-    eventId: 'evt-2001',
-    fromUser: 'Daisy',
-    venueType: 'Restaurant',
-    suggestedTime: '2026-03-29T11:30:00Z',
-    status: 'PENDING',
-  },
-];
-
-const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'n-1',
-    title: 'New friend request',
+    id: 'notif-static-1',
+    title: 'Friend request from Ethan',
     detail: 'Ethan sent you a friend request.',
     createdAt: '2026-03-24T08:00:00Z',
     kind: 'FRIEND_REQUEST',
   },
   {
-    id: 'n-2',
-    title: 'Suggestion available',
+    id: 'notif-static-2',
+    title: 'Suggestion: Park meetup with Bob',
     detail: 'You and Bob share 2 common interests. Consider planning a Park meetup.',
     createdAt: '2026-03-24T14:10:00Z',
     kind: 'SUGGESTION',
@@ -70,65 +40,169 @@ const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
 ];
 
 function delay<T>(value: T, ms = 350): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+  return new Promise(resolve => setTimeout(() => resolve(value), ms));
 }
 
-function readEvents(): EventSummary[] {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return DEFAULT_EVENTS;
-
-  try {
-    const parsed = JSON.parse(raw) as EventSummary[];
-    return Array.isArray(parsed) ? parsed : DEFAULT_EVENTS;
-  } catch {
-    return DEFAULT_EVENTS;
-  }
-}
-
-function saveEvents(events: EventSummary[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(events));
-}
-
-function formatDateFromRange(dateStart: string, dateEnd: string): string {
-  const start = new Date(dateStart);
-  const end = new Date(dateEnd);
-  const midpoint = new Date((start.getTime() + end.getTime()) / 2);
-  return midpoint.toISOString();
-}
-
-function participantNamesFromIds(ids: string[]): string[] {
-  const names = ids.map((id) => FRIENDS.find((friend) => friend.userId === id)?.name ?? id);
-  return ['You', ...names];
-}
+// ─── API Functions ─────────────────────────────────────────────────────────────
 
 export async function fetchFriends(): Promise<FriendProfile[]> {
   return delay(FRIENDS);
 }
 
-export async function fetchDashboardData(): Promise<DashboardData> {
-  const events = readEvents();
-  const upcomingEvents = [...events].sort((a, b) => a.selectedTime.localeCompare(b.selectedTime));
+/**
+ * Dynamically generates notifications from the event store:
+ * 1. ALL_SUBMITTED: creator gets notified when all participants submitted
+ * 2. ATTENDANCE_REQUEST: participant gets notified to confirm/decline after creator finalizes
+ * Also includes static friend/suggestion notifications.
+ */
+export async function fetchNotifications(): Promise<NotificationItem[]> {
+  const events = readEventStore();
+  const dynamic: NotificationItem[] = [];
 
-  return delay({
-    upcomingEvents,
-    pendingInvites: DEFAULT_INVITES,
-    notifications: DEFAULT_NOTIFICATIONS,
+  events.forEach(event => {
+    // 1. Notify creator: all participants submitted → can now select slot
+    if (
+      event.creatorId === CURRENT_USER_ID &&
+      event.status === 'SELECTING_VENUE'
+    ) {
+      dynamic.push({
+        id: `notif-all-submitted-${event.eventId}`,
+        title: 'All participants submitted availability',
+        detail: `Everyone in "${event.title}" has submitted their time slots. You can now select the final time and venue.`,
+        createdAt: new Date().toISOString(),
+        kind: 'ALL_SUBMITTED',
+        eventId: event.eventId,
+      });
+    }
+
+    // 2. Notify participants: confirm/decline attendance after creator scheduled event
+    if (
+      event.status === 'AWAITING_CONFIRMATION' &&
+      event.participants.some(p => p.userId === CURRENT_USER_ID) &&
+      !(event.confirmedUserIds ?? []).includes(CURRENT_USER_ID) &&
+      !(event.declinedUserIds ?? []).includes(CURRENT_USER_ID)
+    ) {
+      const venue = event.selectedVenue?.name ?? 'TBD';
+      const time = event.selectedTime
+        ? `${event.selectedTime.date} at ${event.selectedTime.startHour}:00`
+        : 'TBD';
+      dynamic.push({
+        id: `notif-attendance-${event.eventId}`,
+        title: 'Confirm your attendance',
+        detail: `"${event.title}" is scheduled for ${time} at ${venue}. Will you attend?`,
+        createdAt: new Date().toISOString(),
+        kind: 'ATTENDANCE_REQUEST',
+        eventId: event.eventId,
+      });
+    }
   });
+
+  // Dynamic notifications come first (most actionable)
+  return [...dynamic, ...STATIC_NOTIFICATIONS];
 }
 
-export async function createBaseEvent(input: CreateEventInput): Promise<EventSummary> {
-  const event: EventSummary = {
-    eventId: `evt-${Date.now()}`,
-    creatorId: CURRENT_USER_ID,
-    participantIds: [CURRENT_USER_ID, ...input.participantIds],
-    participantNames: participantNamesFromIds(input.participantIds),
+/** Count actionable (unread) notifications: ALL_SUBMITTED + ATTENDANCE_REQUEST */
+export function countActionableNotifications(): number {
+  const events = readEventStore();
+  let count = 0;
+
+  events.forEach(event => {
+    if (event.creatorId === CURRENT_USER_ID && event.status === 'SELECTING_VENUE') {
+      count++;
+    }
+    if (
+      event.status === 'AWAITING_CONFIRMATION' &&
+      event.participants.some(p => p.userId === CURRENT_USER_ID) &&
+      !(event.confirmedUserIds ?? []).includes(CURRENT_USER_ID) &&
+      !(event.declinedUserIds ?? []).includes(CURRENT_USER_ID)
+    ) {
+      count++;
+    }
+  });
+
+  return count;
+}
+
+/** Dashboard reads from the unified event store */
+export async function fetchDashboardData(): Promise<DashboardData> {
+  const allEvents = readEventStore();
+
+  // Upcoming events = confirmed participation, sorted by date ASC, top 3
+  const upcomingEvents: EventSummary[] = allEvents
+    .filter(e => {
+      const isParticipant = e.participants.some(p => p.userId === CURRENT_USER_ID);
+      if (!isParticipant) return false;
+      if (e.status === 'COLLECTING_AVAILABILITY')
+        return (e.availabilitySubmittedBy ?? []).includes(CURRENT_USER_ID);
+      if (e.status === 'AWAITING_CONFIRMATION')
+        return (e.confirmedUserIds ?? []).includes(CURRENT_USER_ID);
+      return e.status === 'SELECTING_VENUE' || e.status === 'FINALIZED';
+    })
+    .sort((a, b) => {
+      const aDate = a.selectedTime ? a.selectedTime.date : a.dateRange.start;
+      const bDate = b.selectedTime ? b.selectedTime.date : b.dateRange.start;
+      return aDate.localeCompare(bDate);
+    })
+    .slice(0, 3)
+    .map(e => ({
+      eventId: e.eventId,
+      title: e.title,
+      creatorId: e.creatorId,
+      participantIds: e.participants.map(p => p.userId),
+      participantNames: e.participants.map(p => p.name),
+      venueType: (e.venueType || 'Cafe') as VenueType,
+      selectedTime: e.selectedTime
+        ? `${e.selectedTime.date}T${String(e.selectedTime.startHour).padStart(2, '0')}:00:00+08:00`
+        : `${e.dateRange.start}T09:00:00+08:00`,
+      selectedVenue: e.selectedVenue?.name ?? 'Venue TBD',
+      status: e.status,
+    }));
+
+  // Pending invites = events where user is in participants but hasn't submitted yet
+  const pendingInvites: InviteSummary[] = allEvents
+    .filter(e =>
+      e.status === 'COLLECTING_AVAILABILITY' &&
+      e.participants.some(p => p.userId === CURRENT_USER_ID) &&
+      !(e.availabilitySubmittedBy ?? []).includes(CURRENT_USER_ID)
+    )
+    .map(e => ({
+      eventId: e.eventId,
+      title: e.title,
+      fromUser: e.creatorName,
+      venueType: (e.venueType || 'Cafe') as VenueType,
+      dateRange: e.dateRange,
+    }));
+
+  return delay({ upcomingEvents, pendingInvites });
+}
+
+/** createBaseEvent delegates to the unified store (kept for backward compat) */
+export async function createBaseEvent(
+  input: import('../types/event').CreateEventInput & { dateStart: string; dateEnd: string }
+): Promise<EventSummary> {
+  const participantNames = input.participantIds.map(
+    id => FRIENDS.find(f => f.userId === id)?.name ?? id
+  );
+  const newEvent = await createFullEvent({
+    title: `${input.venueType} Meetup`,
+    participantIds: input.participantIds,
+    participantNames,
     venueType: input.venueType,
-    selectedTime: formatDateFromRange(input.dateStart, input.dateEnd),
-    selectedVenue: 'TBD (venue voting in workspace)',
-    status: 'PLANNING',
+    dateRange: { start: input.dateStart.slice(0, 10), end: input.dateEnd.slice(0, 10) },
+    isPublic: false,
+  });
+  return {
+    eventId: newEvent.eventId,
+    title: newEvent.title,
+    creatorId: CURRENT_USER_ID,
+    participantIds: newEvent.participants.map(p => p.userId),
+    participantNames: newEvent.participants.map(p => p.name),
+    venueType: (input.venueType || 'Cafe') as VenueType,
+    selectedTime: `${input.dateStart.slice(0, 10)}T09:00:00+08:00`,
+    selectedVenue: 'Venue TBD',
+    status: 'COLLECTING_AVAILABILITY',
   };
-
-  const allEvents = readEvents();
-  saveEvents([event, ...allEvents]);
-  return delay(event);
 }
+
+// Keep DEFAULT_NOTIFICATIONS export for App.tsx backward compat
+export const DEFAULT_NOTIFICATIONS = STATIC_NOTIFICATIONS;

@@ -1,31 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getCurrentUser } from "aws-amplify/auth";
 import {
   fetchEventById,
-  fetchCommonTimes,
   fetchVenues,
   submitAvailability,
   finalizeEvent,
+  leaveEvent,
+  getDatesInRange,
+  CURRENT_USER_ID,
 } from "../api/Event.tsx";
-import type { EventDetail, CommonTime, Venue, TimeSlot } from "../api/Event.tsx";
+import type { EventDetail, Venue, TimeSlot } from "../api/Event.tsx";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const HOURS = Array.from({ length: 14 }, (_, i) => i + 8); // 8 AM – 9 PM
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getDatesInRange(start: string, end: string): string[] {
-  const dates: string[] = [];
-  const current = new Date(start + "T00:00:00");
-  const endDate = new Date(end + "T00:00:00");
-  while (current <= endDate && dates.length < 7) {
-    dates.push(current.toISOString().slice(0, 10));
-    current.setDate(current.getDate() + 1);
-  }
-  return dates;
-}
 
 function formatHour(hour: number): string {
   if (hour === 12) return "12 PM";
@@ -48,10 +38,11 @@ function slotKey(date: string, hour: number) {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: EventDetail["status"] }) {
-  const map = {
+  const map: Record<EventDetail["status"], { label: string; cls: string }> = {
     COLLECTING_AVAILABILITY: { label: "Collecting Availability", cls: "bg-amber-100 text-amber-700" },
-    SELECTING_VENUE: { label: "Selecting Venue", cls: "bg-blue-100 text-blue-700" },
-    FINALIZED: { label: "Finalized", cls: "bg-green-100 text-green-700" },
+    SELECTING_VENUE:         { label: "Selecting Venue",         cls: "bg-blue-100 text-blue-700" },
+    AWAITING_CONFIRMATION:   { label: "Awaiting Confirmation",   cls: "bg-violet-100 text-violet-700" },
+    FINALIZED:               { label: "Confirmed",               cls: "bg-green-100 text-green-700" },
   };
   const { label, cls } = map[status];
   return (
@@ -71,53 +62,22 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
-// ─── Availability Grid ────────────────────────────────────────────────────────
+// ─── Availability Grid (own slots only — no others' data shown) ───────────────
 
-interface GridProps {
+interface SelectionGridProps {
   dates: string[];
   hours: number[];
   selectedSlots: Set<string>;
-  commonTimes: CommonTime[];
-  totalParticipants: number;
   onMouseDown: (date: string, hour: number) => void;
   onMouseEnter: (date: string, hour: number) => void;
 }
 
-function AvailabilityGrid({
-  dates,
-  hours,
-  selectedSlots,
-  commonTimes,
-  totalParticipants,
-  onMouseDown,
-  onMouseEnter,
-}: GridProps) {
-  function cellClass(date: string, hour: number): string {
-    const key = slotKey(date, hour);
-    const isSelected = selectedSlots.has(key);
-    const common = commonTimes.find(c => c.date === date && c.startHour === hour);
-    const isFullMatch = common?.count === totalParticipants;
-
-    if (isSelected && isFullMatch) return "bg-emerald-500 border-emerald-600";
-    if (isSelected && common)      return "bg-green-400 border-green-500";
-    if (isSelected)                return "bg-green-400 border-green-500 hover:bg-green-500";
-    if (isFullMatch)               return "bg-indigo-400 border-indigo-500";
-    if (common)                    return "bg-indigo-100 border-indigo-200";
-    return "bg-white border-gray-100 hover:bg-gray-50 cursor-pointer";
-  }
-
-  function cellTitle(date: string, hour: number): string {
-    const common = commonTimes.find(c => c.date === date && c.startHour === hour);
-    if (!common) return `${formatDayHeader(date).date} ${formatHour(hour)}`;
-    return `${common.participantNames.join(", ")} available`;
-  }
-
+function SelectionGrid({ dates, hours, selectedSlots, onMouseDown, onMouseEnter }: SelectionGridProps) {
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 select-none">
       <div style={{ minWidth: 560 }}>
-        {/* Header */}
         <div className="grid bg-gray-50 border-b border-gray-200" style={{ gridTemplateColumns: `56px repeat(${dates.length}, 1fr)` }}>
-          <div /> {/* corner */}
+          <div />
           {dates.map(date => {
             const { day, date: d } = formatDayHeader(date);
             return (
@@ -128,31 +88,96 @@ function AvailabilityGrid({
             );
           })}
         </div>
-
-        {/* Rows */}
         {hours.map((hour, hi) => (
-          <div
-            key={hour}
-            className="grid"
-            style={{ gridTemplateColumns: `56px repeat(${dates.length}, 1fr)` }}
-          >
-            {/* Time label */}
-            <div className={`flex items-center justify-end pr-2 text-xs text-gray-400 ${hi % 2 === 0 ? "font-medium" : ""}`}
-              style={{ height: 32 }}>
+          <div key={hour} className="grid" style={{ gridTemplateColumns: `56px repeat(${dates.length}, 1fr)` }}>
+            <div className={`flex items-center justify-end pr-2 text-xs text-gray-400 ${hi % 2 === 0 ? "font-medium" : ""}`} style={{ height: 32 }}>
               {hi % 2 === 0 ? formatHour(hour) : ""}
             </div>
+            {dates.map(date => {
+              const key = slotKey(date, hour);
+              const selected = selectedSlots.has(key);
+              return (
+                <div
+                  key={key}
+                  title={`${formatDayHeader(date).date} ${formatHour(hour)}`}
+                  className={`border-l border-t transition-colors ${
+                    selected ? "bg-green-400 border-green-500" : "bg-white border-gray-100 hover:bg-gray-50 cursor-pointer"
+                  }`}
+                  style={{ height: 32 }}
+                  onMouseDown={() => onMouseDown(date, hour)}
+                  onMouseEnter={() => onMouseEnter(date, hour)}
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-            {/* Cells */}
-            {dates.map(date => (
-              <div
-                key={slotKey(date, hour)}
-                title={cellTitle(date, hour)}
-                className={`border-l border-t transition-colors ${cellClass(date, hour)}`}
-                style={{ height: 32 }}
-                onMouseDown={() => onMouseDown(date, hour)}
-                onMouseEnter={() => onMouseEnter(date, hour)}
-              />
-            ))}
+// ─── Voting Grid (creator in SELECTING_VENUE — shows vote counts, click to pick) ─
+
+interface VotingGridProps {
+  dates: string[];
+  hours: number[];
+  slotCounts: Record<string, number>;
+  totalParticipants: number;
+  selectedSlot: string | null;
+  onSelect: (date: string, hour: number) => void;
+}
+
+function VotingGrid({ dates, hours, slotCounts, totalParticipants, selectedSlot, onSelect }: VotingGridProps) {
+  function cellStyle(date: string, hour: number): string {
+    const key = slotKey(date, hour);
+    const count = slotCounts[key] ?? 0;
+    const isSelected = selectedSlot === key;
+    if (isSelected) return "bg-indigo-600 border-indigo-700 cursor-pointer";
+    if (count === 0) return "bg-white border-gray-100";
+    if (count === totalParticipants) return "bg-indigo-400 border-indigo-500 cursor-pointer hover:bg-indigo-500";
+    return "bg-indigo-100 border-indigo-200 cursor-pointer hover:bg-indigo-200";
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200 select-none">
+      <div style={{ minWidth: 560 }}>
+        <div className="grid bg-gray-50 border-b border-gray-200" style={{ gridTemplateColumns: `56px repeat(${dates.length}, 1fr)` }}>
+          <div />
+          {dates.map(date => {
+            const { day, date: d } = formatDayHeader(date);
+            return (
+              <div key={date} className="py-2 text-center border-l border-gray-200">
+                <div className="text-xs font-medium text-gray-400 uppercase tracking-wide">{day}</div>
+                <div className="text-sm font-semibold text-gray-800 mt-0.5">{d}</div>
+              </div>
+            );
+          })}
+        </div>
+        {hours.map((hour, hi) => (
+          <div key={hour} className="grid" style={{ gridTemplateColumns: `56px repeat(${dates.length}, 1fr)` }}>
+            <div className={`flex items-center justify-end pr-2 text-xs text-gray-400 ${hi % 2 === 0 ? "font-medium" : ""}`} style={{ height: 32 }}>
+              {hi % 2 === 0 ? formatHour(hour) : ""}
+            </div>
+            {dates.map(date => {
+              const key = slotKey(date, hour);
+              const count = slotCounts[key] ?? 0;
+              const isSelected = selectedSlot === key;
+              return (
+                <div
+                  key={key}
+                  title={count > 0 ? `${count}/${totalParticipants} participants available` : "No one selected this slot"}
+                  className={`border-l border-t transition-colors flex items-center justify-center ${cellStyle(date, hour)}`}
+                  style={{ height: 32 }}
+                  onClick={() => count > 0 && onSelect(date, hour)}
+                >
+                  {count > 0 && (
+                    <span className={`text-xs font-bold leading-none ${isSelected ? "text-white" : "text-indigo-700"}`}>
+                      {count}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ))}
       </div>
@@ -162,15 +187,7 @@ function AvailabilityGrid({
 
 // ─── Venue Card ───────────────────────────────────────────────────────────────
 
-function VenueCard({
-  venue,
-  canSelect,
-  onSelect,
-}: {
-  venue: Venue;
-  canSelect: boolean;
-  onSelect: (v: Venue) => void;
-}) {
+function VenueCard({ venue, canSelect, onSelect }: { venue: Venue; canSelect: boolean; onSelect: (v: Venue) => void }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col gap-3 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between gap-3">
@@ -178,23 +195,13 @@ function VenueCard({
           <h3 className="font-semibold text-gray-900 text-base leading-tight">{venue.name}</h3>
           <p className="text-sm text-gray-500 mt-0.5">{venue.address}</p>
         </div>
-        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 text-xl">
-          📍
-        </div>
+        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 text-xl">📍</div>
       </div>
-
       <div className="flex items-center gap-4 text-sm text-gray-600">
         <StarRating rating={venue.rating} />
-        <span className="flex items-center gap-1">
-          <span className="text-gray-400">🗺</span>
-          {venue.distanceKm.toFixed(1)} km
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="text-gray-400">⏱</span>
-          ~{venue.estimatedMinutes} min
-        </span>
+        <span>🗺 {venue.distanceKm.toFixed(1)} km</span>
+        <span>⏱ ~{venue.estimatedMinutes} min</span>
       </div>
-
       {canSelect && (
         <button
           onClick={() => onSelect(venue)}
@@ -202,6 +209,9 @@ function VenueCard({
         >
           Select This Venue
         </button>
+      )}
+      {!canSelect && (
+        <p className="text-xs text-gray-400 text-center">Only the organizer can select a venue</p>
       )}
     </div>
   );
@@ -212,48 +222,45 @@ function VenueCard({
 export default function EventWorkspace() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
-  const [currentUsername, setCurrentUsername] = useState("");
-  useEffect(() => {
-    getCurrentUser().then(u => setCurrentUsername(u.username)).catch(() => {});
-  }, []);
 
   const [activeTab, setActiveTab] = useState<"availability" | "venue">("availability");
   const [event, setEvent] = useState<EventDetail | null>(null);
-  const [commonTimes, setCommonTimes] = useState<CommonTime[]>([]);
   const [venues, setVenues] = useState<Venue[]>([]);
   const [loadingEvent, setLoadingEvent] = useState(true);
   const [loadingVenues, setLoadingVenues] = useState(false);
+
+  // Availability selection (own slots only)
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+
+  // Creator slot voting selection
+  const [selectedFinalSlotKey, setSelectedFinalSlotKey] = useState<string | null>(null);
+
   const [finalizing, setFinalizing] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [leaving, setLeaving] = useState(false);
 
   const isDragging = useRef(false);
   const dragMode = useRef<"add" | "remove">("add");
 
-  // Load event + common times on mount
   useEffect(() => {
     if (!eventId) return;
-    Promise.all([fetchEventById(eventId), fetchCommonTimes(eventId)]).then(
-      ([detail, times]) => {
-        setEvent(detail);
-        setCommonTimes(times);
-        setLoadingEvent(false);
-      }
-    );
+    fetchEventById(eventId).then(detail => {
+      setEvent(detail);
+      setLoadingEvent(false);
+      // Auto-switch tab based on status
+      if (detail.status === 'SELECTING_VENUE') setActiveTab("availability");
+    });
   }, [eventId]);
 
-  // Load venues lazily when tab switches
   useEffect(() => {
     if (activeTab !== "venue" || !eventId || venues.length > 0) return;
     setLoadingVenues(true);
-    fetchVenues(eventId).then(v => {
-      setVenues(v);
-      setLoadingVenues(false);
-    });
+    fetchVenues(eventId).then(v => { setVenues(v); setLoadingVenues(false); });
   }, [activeTab, eventId, venues.length]);
 
-  // Stop drag on mouseup anywhere
   useEffect(() => {
     const stop = () => { isDragging.current = false; };
     document.addEventListener("mouseup", stop);
@@ -276,8 +283,7 @@ export default function EventWorkspace() {
     const key = slotKey(date, hour);
     setSelectedSlots(prev => {
       const next = new Set(prev);
-      if (dragMode.current === "add") next.add(key);
-      else next.delete(key);
+      if (dragMode.current === "add") next.add(key); else next.delete(key);
       return next;
     });
   }, []);
@@ -285,43 +291,63 @@ export default function EventWorkspace() {
   async function handleSubmitAvailability() {
     if (!eventId) return;
     setSubmitting(true);
-    // slotKey format: "YYYY-MM-DD-HH" — split on last dash
     const slots: TimeSlot[] = Array.from(selectedSlots).map(key => {
       const lastDash = key.lastIndexOf("-");
       return { date: key.slice(0, lastDash), startHour: parseInt(key.slice(lastDash + 1)) };
     });
-    await submitAvailability(eventId, currentUsername, slots);
+    await submitAvailability(eventId, CURRENT_USER_ID, slots);
+    const refreshed = await fetchEventById(eventId);
+    setEvent(refreshed);
     setSubmitting(false);
     setSubmitted(true);
+    if (refreshed.status === 'SELECTING_VENUE') {
+      // All submitted — stay on availability tab to see "submitted" banner
+    }
   }
 
   async function handleSelectVenue(venue: Venue) {
-    if (!eventId || selectedSlots.size === 0) {
-      // Use first common time as the selected slot for demo
-      const slot = commonTimes[0]
-        ? { date: commonTimes[0].date, startHour: commonTimes[0].startHour }
-        : { date: "2026-03-31", startHour: 14 };
-      setFinalizing(true);
-      await finalizeEvent(eventId!, slot, venue.venueId);
-      setFinalizing(false);
-      navigate(`/events/${eventId}/details`, {
-        state: { event, selectedSlot: slot, selectedVenue: venue },
-      });
-      return;
-    }
-
-    const firstKey = Array.from(selectedSlots)[0];
-    const parts = firstKey.split("-");
+    if (!eventId || !selectedFinalSlotKey) return;
+    const lastDash = selectedFinalSlotKey.lastIndexOf("-");
     const slot: TimeSlot = {
-      date: parts.slice(0, 3).join("-"),
-      startHour: parseInt(parts[3]),
+      date: selectedFinalSlotKey.slice(0, lastDash),
+      startHour: parseInt(selectedFinalSlotKey.slice(lastDash + 1), 10),
     };
     setFinalizing(true);
-    await finalizeEvent(eventId!, slot, venue.venueId);
-    setFinalizing(false);
-    navigate(`/events/${eventId}/details`, {
-      state: { event, selectedSlot: slot, selectedVenue: venue },
-    });
+    try {
+      await finalizeEvent(eventId, slot, venue.venueId);
+      const finalEvent = await fetchEventById(eventId);
+      navigate(`/events/${eventId}/details`, {
+        state: { event: finalEvent, selectedSlot: slot, selectedVenue: venue },
+      });
+    } catch (err) {
+      console.error("Failed to finalize event:", err);
+    } finally {
+      setFinalizing(false);
+    }
+  }
+
+  function handleExitRequest() {
+    if (event && event.creatorId !== CURRENT_USER_ID) {
+      setShowLeaveConfirm(true);
+      return;
+    }
+    if (selectedSlots.size > 0 && !submitted) {
+      setShowExitConfirm(true);
+    } else {
+      navigate("/events");
+    }
+  }
+
+  async function handleLeaveEvent() {
+    if (!eventId) return;
+    setLeaving(true);
+    try {
+      await leaveEvent(eventId);
+      navigate("/events");
+    } finally {
+      setLeaving(false);
+      setShowLeaveConfirm(false);
+    }
   }
 
   if (loadingEvent) {
@@ -336,17 +362,69 @@ export default function EventWorkspace() {
   }
 
   if (!event) {
-    return (
-      <div className="text-center py-16 text-gray-500">Event not found.</div>
-    );
+    return <div className="text-center py-16 text-gray-500">Event not found.</div>;
+  }
+
+  // Redirect FINALIZED events to details page
+  if (event.status === 'FINALIZED') {
+    navigate(`/events/${eventId}/details`, { replace: true });
+    return null;
   }
 
   const dates = getDatesInRange(event.dateRange.start, event.dateRange.end);
   const totalParticipants = event.participants.length;
-  const isCreator = true; // In production: user?.username === event.creatorId
+  const isCreator = event.creatorId === CURRENT_USER_ID;
+  const alreadySubmitted = (event.availabilitySubmittedBy ?? []).includes(CURRENT_USER_ID);
+
+  // Venue tab unlocks for creator once they've picked a final slot
+  const venueUnlocked = isCreator && event.status === 'SELECTING_VENUE' && selectedFinalSlotKey !== null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+
+      {/* ── Leave Event Dialog ── */}
+      {showLeaveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4 space-y-4">
+            <h3 className="text-base font-semibold text-gray-900">Leave this event?</h3>
+            <p className="text-sm text-gray-500">
+              You will be moved to Pending status. The event will remain in MyEvents so you can rejoin later.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button onClick={handleLeaveEvent} disabled={leaving}
+                className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors disabled:opacity-50">
+                {leaving ? "Leaving…" : "Leave Event"}
+              </button>
+              <button onClick={() => setShowLeaveConfirm(false)}
+                className="flex-1 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
+                Stay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Exit Without Submitting Dialog ── */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4 space-y-4">
+            <h3 className="text-base font-semibold text-gray-900">Exit without submitting?</h3>
+            <p className="text-sm text-gray-500">
+              You have {selectedSlots.size} slot{selectedSlots.size !== 1 ? "s" : ""} selected that haven't been submitted. They will be lost.
+            </p>
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => { setShowExitConfirm(false); navigate("/events"); }}
+                className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors">
+                Exit Anyway
+              </button>
+              <button onClick={() => setShowExitConfirm(false)}
+                className="flex-1 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
+                Stay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
@@ -363,97 +441,198 @@ export default function EventWorkspace() {
                   {p.name[0]}
                 </span>
                 {p.name}
+                {(event.availabilitySubmittedBy ?? []).includes(p.userId) && (
+                  <span className="text-green-500 text-[10px]">✓</span>
+                )}
               </span>
             ))}
           </div>
         </div>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={handleExitRequest}
+            className="text-sm px-4 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+            ← Back to Events
+          </button>
+          <button onClick={handleExitRequest}
+            className="text-sm px-4 py-2 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+            Exit
+          </button>
+        </div>
       </div>
 
+      {/* ── AWAITING_CONFIRMATION banner ── */}
+      {event.status === 'AWAITING_CONFIRMATION' && (
+        <div className="rounded-2xl bg-violet-50 border border-violet-200 p-5 space-y-2">
+          <p className="text-sm font-semibold text-violet-800">
+            📩 Event scheduled — waiting for participants to confirm
+          </p>
+          {event.selectedTime && event.selectedVenue && (
+            <p className="text-sm text-violet-700">
+              {event.selectedTime.date} at {formatHour(event.selectedTime.startHour)} · {event.selectedVenue.name}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2 mt-1">
+            {event.participants.map(p => {
+              const confirmed = (event.confirmedUserIds ?? []).includes(p.userId);
+              const declined = (event.declinedUserIds ?? []).includes(p.userId);
+              return (
+                <span key={p.userId} className={`text-xs px-2 py-0.5 rounded-full border ${
+                  confirmed ? "bg-green-100 text-green-700 border-green-200" :
+                  declined  ? "bg-red-100 text-red-700 border-red-200" :
+                              "bg-gray-100 text-gray-500 border-gray-200"
+                }`}>
+                  {p.name} {confirmed ? "✓" : declined ? "✗" : "…"}
+                </span>
+              );
+            })}
+          </div>
+          <p className="text-xs text-violet-500">
+            Participants confirm or decline via their Notifications.
+          </p>
+        </div>
+      )}
+
       {/* ── Tabs ── */}
-      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
-        {(["availability", "venue"] as const).map(tab => (
+      {event.status !== 'AWAITING_CONFIRMATION' && (
+        <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
           <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all capitalize ${
-              activeTab === tab
+            onClick={() => setActiveTab("availability")}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeTab === "availability" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            {event.status === 'SELECTING_VENUE' && isCreator ? "🗳 Slot Voting" : "🗓 Availability"}
+          </button>
+          <button
+            onClick={() => venueUnlocked && setActiveTab("venue")}
+            disabled={!venueUnlocked}
+            title={!venueUnlocked ? (
+              isCreator && event.status === 'SELECTING_VENUE'
+                ? "Select a time slot above first"
+                : "Submit your availability first"
+            ) : undefined}
+            className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+              !venueUnlocked
+                ? "text-gray-300 cursor-not-allowed"
+                : activeTab === "venue"
                 ? "bg-white text-indigo-700 shadow-sm"
                 : "text-gray-500 hover:text-gray-800"
             }`}
           >
-            {tab === "availability" ? "🗓 Availability" : "📍 Venues"}
+            📍 Venues {!venueUnlocked && "🔒"}
           </button>
-        ))}
-      </div>
+        </div>
+      )}
 
-      {/* ── Availability Tab ── */}
-      {activeTab === "availability" && (
+      {/* ── Availability Tab: collect own slots ── */}
+      {activeTab === "availability" && event.status === 'COLLECTING_AVAILABILITY' && (
         <div className="space-y-4">
-          <p className="text-sm text-gray-500">
-            Click or drag to mark your available time slots.
-          </p>
+          {alreadySubmitted ? (
+            <div className="flex items-center gap-2 text-sm text-green-600 font-medium p-3 bg-green-50 rounded-xl border border-green-200">
+              <span className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center text-xs">✓</span>
+              Your availability has been submitted. Waiting for others to submit.
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-gray-500">
+                Select your available time slots. Your selections are private — others cannot see them.
+              </p>
+              <SelectionGrid
+                dates={dates}
+                hours={HOURS}
+                selectedSlots={selectedSlots}
+                onMouseDown={handleCellMouseDown}
+                onMouseEnter={handleCellMouseEnter}
+              />
+              <div className="flex items-center gap-3 pt-1">
+                {submitted ? (
+                  <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+                    <span className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center text-xs">✓</span>
+                    Availability submitted!
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleSubmitAvailability}
+                    disabled={submitting || selectedSlots.size === 0}
+                    className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {submitting ? "Submitting…" : `Submit Availability (${selectedSlots.size} slots)`}
+                  </button>
+                )}
+                {selectedSlots.size > 0 && !submitted && (
+                  <button onClick={() => setSelectedSlots(new Set())}
+                    className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
+                    Clear all
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
-          <AvailabilityGrid
+      {/* ── Availability Tab: creator sees vote counts in SELECTING_VENUE ── */}
+      {activeTab === "availability" && event.status === 'SELECTING_VENUE' && isCreator && (
+        <div className="space-y-4">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
+            All {totalParticipants} participants have submitted. Click a highlighted slot to select it as the final time.
+            {selectedFinalSlotKey && (
+              <span className="ml-2 font-semibold text-indigo-700">
+                Selected: {(() => {
+                  const lastDash = selectedFinalSlotKey.lastIndexOf("-");
+                  const date = selectedFinalSlotKey.slice(0, lastDash);
+                  const hour = parseInt(selectedFinalSlotKey.slice(lastDash + 1));
+                  return `${date} ${formatHour(hour)}`;
+                })()}
+              </span>
+            )}
+          </div>
+          <VotingGrid
             dates={dates}
             hours={HOURS}
-            selectedSlots={selectedSlots}
-            commonTimes={commonTimes}
+            slotCounts={event.slotCounts ?? {}}
             totalParticipants={totalParticipants}
-            onMouseDown={handleCellMouseDown}
-            onMouseEnter={handleCellMouseEnter}
+            selectedSlot={selectedFinalSlotKey}
+            onSelect={(date, hour) => setSelectedFinalSlotKey(slotKey(date, hour))}
           />
-
-          {/* Legend */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-gray-500">
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-green-400 border border-green-500" /> Your availability
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-indigo-100 border border-indigo-200" /> Partial overlap
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-indigo-400 border border-indigo-500" /> Full overlap (all {totalParticipants})
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded bg-emerald-500 border border-emerald-600" /> You + full overlap
-            </span>
+            <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-indigo-100 border border-indigo-200 flex items-center justify-center text-[10px] font-bold text-indigo-600">N</span> Partial availability</span>
+            <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-indigo-400 border border-indigo-500" /> All participants available</span>
+            <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded bg-indigo-600 border border-indigo-700" /> Selected as final time</span>
           </div>
+          {selectedFinalSlotKey && (
+            <button
+              onClick={() => setActiveTab("venue")}
+              className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all"
+            >
+              Choose Venue →
+            </button>
+          )}
+        </div>
+      )}
 
-          {/* Submit */}
-          <div className="flex items-center gap-3 pt-1">
-            {submitted ? (
-              <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
-                <span className="w-5 h-5 rounded-full bg-green-100 flex items-center justify-center text-xs">✓</span>
-                Availability submitted!
-              </div>
-            ) : (
-              <button
-                onClick={handleSubmitAvailability}
-                disabled={submitting || selectedSlots.size === 0}
-                className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {submitting ? "Submitting…" : `Submit Availability (${selectedSlots.size} slots)`}
-              </button>
-            )}
-            {selectedSlots.size > 0 && !submitted && (
-              <button
-                onClick={() => setSelectedSlots(new Set())}
-                className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                Clear all
-              </button>
-            )}
-          </div>
+      {/* ── Availability Tab: non-creator waiting in SELECTING_VENUE ── */}
+      {activeTab === "availability" && event.status === 'SELECTING_VENUE' && !isCreator && (
+        <div className="flex flex-col items-center py-12 gap-3 text-center">
+          <div className="text-4xl">⏳</div>
+          <p className="text-gray-700 font-medium">All participants have submitted their availability.</p>
+          <p className="text-gray-500 text-sm">The organizer ({event.creatorName}) is selecting the final time and venue.</p>
         </div>
       )}
 
       {/* ── Venue Tab ── */}
       {activeTab === "venue" && (
         <div className="space-y-4">
-          <p className="text-sm text-gray-500">
-            Recommended venues based on participants' locations.
-            {isCreator ? " Select the final venue to confirm the event." : " Waiting for the organizer to select a venue."}
-          </p>
+          {isCreator && selectedFinalSlotKey && (
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl text-sm text-indigo-800">
+              ✅ Final time selected. Now choose a venue to confirm the event.
+            </div>
+          )}
+          {!isCreator && (
+            <p className="text-sm text-gray-500 p-3 bg-gray-50 rounded-xl border border-gray-200">
+              Only the organizer can select a venue.
+            </p>
+          )}
 
           {loadingVenues ? (
             <div className="flex items-center gap-3 py-8">

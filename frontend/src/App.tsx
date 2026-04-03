@@ -6,13 +6,16 @@ import { Routes, Route, BrowserRouter, Link, useLocation } from 'react-router-do
 import AuthPage from './pages/AuthPage.tsx';
 import Dashboard from './pages/Dashboard';
 import EventCreationWizard from './pages/EventCreationWizard';
+import EventList from './pages/EventList.tsx';
 import CreateEvent from './pages/CreateEvent.tsx';
 import EventWorkspace from './pages/EventWorkspace.tsx';
 import EventDetails from './pages/EventDetails.tsx';
+import NotificationsPage from './pages/NotificationsPage.tsx';
 import OnboardingPage from './pages/OnboardingPage.tsx';
 import ProfilePage from './pages/ProfilePage.tsx';
 import FriendsManagementPage from './pages/FriendsManagementPage.tsx';
 import { fetchCurrentUser, createUser } from './api/User.tsx';
+import { countActionableNotifications } from './api/eventService';
 
 Amplify.configure({
   Auth: {
@@ -63,11 +66,17 @@ function AppContent({
   displayName,
   onSignOut,
   onDisplayNameChange,
+  notifUnread,
+  onNotifRead,
+  onNotifRefresh,
 }: {
   userId: string;
   displayName: string;
   onSignOut: () => void;
   onDisplayNameChange: (name: string) => void;
+  notifUnread: number;
+  onNotifRead: () => void;
+  onNotifRefresh: () => void;
 }) {
   return (
     <BrowserRouter>
@@ -91,11 +100,28 @@ function AppContent({
             <nav className="flex items-center gap-5">
               <NavLink to="/">Dashboard</NavLink>
               <NavLink to="/friends">Friends</NavLink>
+              <NavLink to="/events">Events</NavLink>
               <NavLink to="/events/new">New Event</NavLink>
-              <NavLink to="/create">Legacy Create</NavLink>
             </nav>
 
             <div className="ml-auto flex items-center gap-3">
+              {/* Bell icon with unread badge */}
+              <Link
+                to="/notifications"
+                onClick={onNotifRead}
+                className="relative flex items-center justify-center w-8 h-8 rounded-full hover:bg-gray-100 transition-colors"
+                aria-label="Notifications"
+              >
+                <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {notifUnread > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    {notifUnread}
+                  </span>
+                )}
+              </Link>
+
               <Link
                 to="/profile"
                 className="hidden sm:flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors"
@@ -115,14 +141,16 @@ function AppContent({
           </div>
         </header>
 
-        <main>
+        <main className="max-w-6xl mx-auto px-6 py-6">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/friends" element={<FriendsManagementPage />} />
+            <Route path="/events" element={<EventList />} />
             <Route path="/events/new" element={<EventCreationWizard />} />
             <Route path="/create" element={<CreateEvent />} />
             <Route path="/events/:eventId/workspace" element={<EventWorkspace />} />
             <Route path="/events/:eventId/details" element={<EventDetails />} />
+            <Route path="/notifications" element={<NotificationsPage onRead={onNotifRead} onActionComplete={onNotifRefresh} />} />
             <Route path="/profile" element={<ProfilePage userId={userId} onNameChange={onDisplayNameChange} />} />
           </Routes>
         </main>
@@ -136,6 +164,15 @@ export default function App() {
   const [userId, setUserId] = useState('');
   const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [notifUnread, setNotifUnread] = useState<number>(() => countActionableNotifications());
+
+  function handleNotifRead() {
+    setNotifUnread(0);
+  }
+
+  function refreshNotifCount() {
+    setNotifUnread(countActionableNotifications());
+  }
 
   async function checkAuth() {
     try {
@@ -202,6 +239,9 @@ export default function App() {
       displayName={displayName}
       onSignOut={handleSignOut}
       onDisplayNameChange={setDisplayName}
+      notifUnread={notifUnread}
+      onNotifRead={handleNotifRead}
+      onNotifRefresh={refreshNotifCount}
     />
   );
 }

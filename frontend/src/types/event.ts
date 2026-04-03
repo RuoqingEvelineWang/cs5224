@@ -1,9 +1,14 @@
-export type VenueType = 'Cafe' | 'Park' | 'Restaurant' | 'Mall' | 'Library';
+export type VenueType = 'Cafe' | 'Park' | 'Restaurant' | 'Mall' | 'Library' | 'Sports Hall';
 
-export type EventStatus = 'PLANNING' | 'CONFIRMED';
+export type EventStatus =
+  | 'COLLECTING_AVAILABILITY'
+  | 'SELECTING_VENUE'
+  | 'AWAITING_CONFIRMATION'
+  | 'FINALIZED';
 
 export type EventSummary = {
   eventId: string;
+  title: string;
   creatorId: string;
   participantIds: string[];
   participantNames: string[];
@@ -15,18 +20,24 @@ export type EventSummary = {
 
 export type InviteSummary = {
   eventId: string;
+  title: string;
   fromUser: string;
   venueType: VenueType;
-  suggestedTime: string;
-  status: 'PENDING';
+  dateRange: { start: string; end: string };
 };
 
 export type NotificationItem = {
   id: string;
   title: string;
   detail: string;
-  createdAt: string;
-  kind: 'FRIEND_REQUEST' | 'SUGGESTION' | 'EVENT_UPDATE';
+  createdAt: string;  // ISO 8601
+  kind:
+    | 'FRIEND_REQUEST'
+    | 'SUGGESTION'
+    | 'EVENT_UPDATE'
+    | 'ALL_SUBMITTED'       // creator: all participants submitted slots
+    | 'ATTENDANCE_REQUEST'; // participant: confirm/decline attendance
+  eventId?: string;         // for navigation / action
 };
 
 export type FriendProfile = {
@@ -38,7 +49,6 @@ export type FriendProfile = {
 export type DashboardData = {
   upcomingEvents: EventSummary[];
   pendingInvites: InviteSummary[];
-  notifications: NotificationItem[];
 };
 
 export type CreateEventInput = {
