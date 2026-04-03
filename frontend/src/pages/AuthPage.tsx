@@ -6,7 +6,6 @@ import { signIn, signUp, confirmSignUp, signOut } from "aws-amplify/auth";
 type Mode = "signIn" | "signUp" | "confirm";
 
 interface Fields {
-  username: string;
   email: string;
   password: string;
   confirm: string;
@@ -211,7 +210,7 @@ function SignInForm({
   onSuccess: () => void;
   onSwitchToSignUp: () => void;
 }) {
-  const [fields, setFields] = useState({ username: "", password: "" });
+  const [fields, setFields] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -220,16 +219,12 @@ function SignInForm({
   }
 
   async function handleSubmit() {
-    if (!fields.username || !fields.password) { setError("Please fill in all fields."); return; }
+    if (!fields.email || !fields.password) { setError("Please fill in all fields."); return; }
     setLoading(true);
     try {
-      // Workaround: clear any stale Amplify session before signing in.
-      // This prevents "There is already a signed in user" errors that occur
-      // when a Cognito account is deleted while a local session still exists.
-      // For example, if a user is deleted in the AWS console, the local session
-      // will not be cleared, and the user will not be able to sign in again.
       await signOut().catch(() => { });
-      await signIn({ username: fields.username, password: fields.password });
+      // Pass the email address directly into Amplify's username parameter
+      await signIn({ username: fields.email, password: fields.password });
       onSuccess();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Sign in failed. Please try again.");
@@ -247,7 +242,7 @@ function SignInForm({
       <ErrorBanner msg={error} />
 
       <div className="space-y-4">
-        <Field label="Username" value={fields.username} onChange={set("username")} placeholder="your_username" autoComplete="username" />
+        <Field label="Email" type="email" value={fields.email} onChange={set("email")} placeholder="you@example.com" autoComplete="email" />
         <Field label="Password" type="password" value={fields.password} onChange={set("password")} placeholder="••••••••" autoComplete="current-password" />
       </div>
 
@@ -277,11 +272,11 @@ function SignUpForm({
   onSuccess,
   onSwitchToSignIn,
 }: {
-  onSuccess: (username: string) => void;
+  onSuccess: (email: string) => void;
   onSwitchToSignIn: () => void;
 }) {
-  const [fields, setFields] = useState<Pick<Fields, "username" | "email" | "password" | "confirm">>({
-    username: "", email: "", password: "", confirm: "",
+  const [fields, setFields] = useState<Pick<Fields, "email" | "password" | "confirm">>({
+    email: "", password: "", confirm: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -291,7 +286,7 @@ function SignUpForm({
   }
 
   async function handleSubmit() {
-    if (!fields.username || !fields.email || !fields.password || !fields.confirm) {
+    if (!fields.email || !fields.password || !fields.confirm) {
       setError("Please fill in all fields."); return;
     }
     if (fields.password !== fields.confirm) { setError("Passwords do not match."); return; }
@@ -300,11 +295,12 @@ function SignUpForm({
     setLoading(true);
     try {
       await signUp({
-        username: fields.username,
+        // Pass the email into the username parameter
+        username: fields.email,
         password: fields.password,
         options: { userAttributes: { email: fields.email } },
       });
-      onSuccess(fields.username);
+      onSuccess(fields.email);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Sign up failed. Please try again.");
     }
@@ -321,7 +317,6 @@ function SignUpForm({
       <ErrorBanner msg={error} />
 
       <div className="space-y-4">
-        <Field label="Username" value={fields.username} onChange={set("username")} placeholder="your_username" autoComplete="username" />
         <Field label="Email" type="email" value={fields.email} onChange={set("email")} placeholder="you@example.com" autoComplete="email" />
         <Field label="Password" type="password" value={fields.password} onChange={set("password")} placeholder="Min. 8 characters" autoComplete="new-password" />
         <Field label="Confirm Password" type="password" value={fields.confirm} onChange={set("confirm")} placeholder="••••••••" autoComplete="new-password" />
@@ -344,10 +339,10 @@ function SignUpForm({
 // ─── Confirm Sign Up Form ─────────────────────────────────────────────────────
 
 function ConfirmForm({
-  username,
+  email,
   onSuccess,
 }: {
-  username: string;
+  email: string;
   onSuccess: () => void;
 }) {
   const [code, setCode] = useState("");
@@ -358,7 +353,7 @@ function ConfirmForm({
     if (!code.trim()) { setError("Please enter the verification code."); return; }
     setLoading(true);
     try {
-      await confirmSignUp({ username, confirmationCode: code.trim() });
+      await confirmSignUp({ username: email, confirmationCode: code.trim() });
       onSuccess();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Verification failed. Please try again.");
@@ -378,8 +373,7 @@ function ConfirmForm({
       <div>
         <h2 className="text-2xl font-bold text-gray-900">Verify your email</h2>
         <p className="text-sm text-gray-500 mt-1">
-          We sent a 6-digit code to the email linked to{" "}
-          <span className="font-medium text-gray-800">{username}</span>.
+          We sent a 6-digit code to <span className="font-medium text-gray-800">{email}</span>.
         </p>
       </div>
 
@@ -411,10 +405,10 @@ function ConfirmForm({
 
 export default function AuthPage({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [mode, setMode] = useState<Mode>("signIn");
-  const [pendingUsername, setPendingUsername] = useState("");
+  const [pendingEmail, setPendingEmail] = useState("");
 
-  function handleSignUpSuccess(username: string) {
-    setPendingUsername(username);
+  function handleSignUpSuccess(email: string) {
+    setPendingEmail(email);
     setMode("confirm");
   }
 
@@ -450,7 +444,7 @@ export default function AuthPage({ onAuthenticated }: { onAuthenticated: () => v
             <SignUpForm onSuccess={handleSignUpSuccess} onSwitchToSignIn={() => setMode("signIn")} />
           )}
           {mode === "confirm" && (
-            <ConfirmForm username={pendingUsername} onSuccess={handleConfirmSuccess} />
+            <ConfirmForm email={pendingEmail} onSuccess={handleConfirmSuccess} />
           )}
         </div>
       </div>

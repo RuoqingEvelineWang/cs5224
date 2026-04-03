@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { fetchEventById, unfinalizeEvent, CURRENT_USER_ID } from "../api/Event.tsx";
+import { fetchAuthSession } from "aws-amplify/auth";
 import type { EventDetail, TimeSlot, Venue } from "../api/Event.tsx";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDateTime(slot: TimeSlot): string {
+  if (!slot?.date) return "Time TBD";
   const d = new Date(slot.date + "T00:00:00");
   const dayStr = d.toLocaleDateString("en-US", {
     weekday: "long",
@@ -52,25 +53,81 @@ export default function EventDetails() {
   const location = useLocation();
   const state = location.state as LocationState | null;
 
-  // Use state from navigation if available, otherwise load from store
   const [event, setEvent] = useState<EventDetail | null>(state?.event ?? null);
   const [loading, setLoading] = useState(!state?.event);
   const [showRevertConfirm, setShowRevertConfirm] = useState(false);
   const [reverting, setReverting] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (state?.event || !eventId) return;
-    fetchEventById(eventId)
-      .then(e => { setEvent(e); setLoading(false); })
-      .catch(() => setLoading(false));
+    async function loadEvent() {
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        const userId = session.tokens?.idToken?.payload?.sub as string;
+        setCurrentUserId(userId);
+
+        if (state?.event || !eventId) {
+          setLoading(false);
+          return;
+        }
+
+        const apiUrl = import.meta.env.VITE_API_URL;
+        if (!token || !apiUrl) throw new Error("Missing Auth token or API URL");
+
+        // NEW: Hit the specific event API endpoint
+        const response = await fetch(`${apiUrl}/events/${eventId}`, {
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+             setEvent(null);
+             return;
+          }
+          throw new Error("Failed to fetch event");
+        }
+        
+        // The data is now a single object instead of an array
+        const { data } = await response.json();
+        setEvent(data);
+
+      } catch (err) {
+        console.error("Error loading event details:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadEvent();
   }, [eventId, state?.event]);
 
   async function handleRevertAndExit() {
     if (!eventId) return;
     setReverting(true);
     try {
-      await unfinalizeEvent(eventId);
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+
+      // Note: You will need to build this API endpoint in your Lambda later!
+      const response = await fetch(`${apiUrl}/events/${eventId}/unfinalize`, {
+        method: 'POST',
+        headers: {
+          'Authorization': token || '',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) throw new Error("Failed to revert event");
+
       navigate(`/events/${eventId}/workspace`, { replace: true });
+    } catch (err) {
+      console.error("Error reverting event:", err);
+      alert("Failed to revert event. Check console for details.");
     } finally {
       setReverting(false);
       setShowRevertConfirm(false);
@@ -89,8 +146,8 @@ export default function EventDetails() {
   }
 
   // Derive slot and venue: prefer navigation state, fall back to event's stored data
-  const selectedSlot: TimeSlot | undefined = state?.selectedSlot ?? event?.selectedTime;
-  const selectedVenue: Venue | undefined = state?.selectedVenue ?? event?.selectedVenue;
+  const selectedSlot = state?.selectedSlot ?? event?.selectedTime;
+  const selectedVenue = state?.selectedVenue ?? event?.selectedVenue;
 
   if (!event || !selectedSlot || !selectedVenue) {
     return (
@@ -152,15 +209,15 @@ export default function EventDetails() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 mt-4">
-          {event.participants.map(p => (
+          {event.participants?.map(p => (
             <span
               key={p.userId}
               className="inline-flex items-center gap-1 text-xs bg-white/20 text-white px-2.5 py-1 rounded-full"
             >
               <span className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center font-bold text-[10px]">
-                {p.name[0]}
+                {p.name?.[0] || '?'}
               </span>
-              {p.name}
+              {p.name || 'Unknown'}
             </span>
           ))}
         </div>
@@ -174,22 +231,22 @@ export default function EventDetails() {
 
         <DetailRow icon="📍" label="Venue">
           <p className="font-medium text-gray-900">{selectedVenue.name}</p>
-          <p className="text-sm text-gray-500 mt-0.5">{selectedVenue.address}</p>
+          <p className="text-sm text-gray-500 mt-0.5">{selectedVenue.address || 'Address not available'}</p>
           <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
-            <span>⭐ {selectedVenue.rating.toFixed(1)}</span>
-            <span>🗺 {selectedVenue.distanceKm.toFixed(1)} km</span>
-            <span>⏱ ~{selectedVenue.estimatedMinutes} min</span>
+            <span>⭐ {selectedVenue.rating?.toFixed(1) || 'N/A'}</span>
+            <span>🗺 {selectedVenue.distanceKm?.toFixed(1) || '?'} km</span>
+            <span>⏱ ~{selectedVenue.estimatedMinutes || '?'} min</span>
           </div>
         </DetailRow>
 
         <DetailRow icon="👥" label="Attendees">
           <ul className="space-y-1.5">
-            {event.participants.map(p => (
+            {event.participants?.map(p => (
               <li key={p.userId} className="flex items-center gap-2 text-sm">
                 <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-semibold text-[11px]">
-                  {p.name[0]}
+                  {p.name?.[0] || '?'}
                 </span>
-                <span className="text-gray-800">{p.name}</span>
+                <span className="text-gray-800">{p.name || 'Unknown User'}</span>
               </li>
             ))}
           </ul>
@@ -208,7 +265,7 @@ export default function EventDetails() {
         >
           ← Back to Events
         </button>
-        {event.creatorId === CURRENT_USER_ID && (
+        {event.creatorId === currentUserId && (
           <button
             onClick={() => setShowRevertConfirm(true)}
             className="flex-1 py-2.5 px-5 rounded-xl border border-amber-200 text-amber-600 text-sm font-medium hover:bg-amber-50 active:scale-95 transition-all text-center"
