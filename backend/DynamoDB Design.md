@@ -46,7 +46,7 @@ Lambda 环境变量从 4 个表名变为 1 个表名 + GSI 名称。
 **GSI 定义：**
 
 - **GSI1** (`GSI1PK` → `GSI1SK`)：用于「查询某用户参与的所有活动」
-- **GSI2** (`GSI2PK` → `GSI2SK`)：用于「按 email 查找用户」（发送好友请求时使用）
+- **GSI2** (`GSI2PK` → `GSI2SK`)：用于「按 email 查找用户」（可选能力，非好友请求必需）
 
 两个 GSI 均使用 `ProjectionType.ALL`，投影全部属性。
 
@@ -74,7 +74,7 @@ mainTable.addGlobalSecondaryIndex({
   projectionType: dynamodb.ProjectionType.ALL,
 });
 
-// GSI2: email lookup — find a user by email when sending friend requests
+// GSI2: email lookup — optional capability for account discovery
 mainTable.addGlobalSecondaryIndex({
   indexName: 'GSI2',
   partitionKey: { name: 'GSI2PK', type: dynamodb.AttributeType.STRING },
@@ -90,7 +90,7 @@ environment: {
   STAGE: stage,
   MAIN_TABLE: mainTable.tableName,   // e.g., midmeet-dev-main
   MAIN_TABLE_GSI1: 'GSI1',           // user-centric reverse lookup
-  MAIN_TABLE_GSI2: 'GSI2',           // email lookup
+  MAIN_TABLE_GSI2: 'GSI2',           // optional email lookup
 },
 ```
 
@@ -391,17 +391,19 @@ environment: {
 | 1 | `GET /users/me` | `GetItem(PK=USER#uid, SK=PROFILE)` | 返回完整 profile 包含 exactAddress |
 | 2 | `PUT /users/me` | `PutItem / UpdateItem(PK=USER#uid, SK=PROFILE)` | 首次写入设 createdAt，后续只更新 updatedAt |
 | 3 | `GET /users/:userId` | `GetItem(PK=USER#uid, SK=PROFILE)` | **不返回 exactAddress** |
-| 4 | 按 email 查用户（内部） | `Query(GSI2, GSI2PK=EMAIL#email, GSI2SK=PROFILE)` | 用于 `POST /friends/request` 内部步骤 |
+| 4 | 按 email 查用户（内部可选） | `Query(GSI2, GSI2PK=EMAIL#email, GSI2SK=PROFILE)` | 用于账号发现/检索，不是好友请求必需步骤 |
 
 ### 4.2 好友相关
 
 | # | API 端点 | DynamoDB 操作 | 说明 |
 |---|---|---|---|
 | 5 | `GET /friends` | `Query(PK=USER#uid, SK begins_with FRIEND#)` + filter `status=ACCEPTED`，再 `BatchGetItem` 获取 profile | 获取好友完整 profile |
-| 6 | `GET /friends/requests` | `Query(PK=USER#uid, SK begins_with FRIEND#)` + filter `status=PENDING AND requestedBy ≠ uid`，再 `BatchGetItem` 获取 profile | 获取待处理的好友请求 |
-| 7 | `POST /friends/request` | 先 Query GSI2 找目标用户；再写入两条 Friendship 记录（`PutItem` × 2） | 如已存在则返回 409 |
-| 8 | `POST /friends/accept` | `UpdateItem(PK=USER#uid, SK=FRIEND#fid, status=ACCEPTED)` × 2（双向更新） | 同时更新双方记录 |
-| 9 | `DELETE /friends/:friendId` | `DeleteItem(PK=USER#uid, SK=FRIEND#fid)` × 2（双向删除） | 同时删除双方记录 |
+| 6 | `GET /friends/{userId}` | `Query(PK=USER#uid, SK begins_with FRIEND#)` 后按状态拆分 `friends / incomingRequests / outgoingRequests`，再 `BatchGetItem` 获取 profile | 获取好友图谱快照 |
+| 7 | `POST /friends/request` | 直接按 `targetUserId` 写入两条 Friendship 记录（`PutItem` × 2） | 先检查现有关系，冲突返回 409 |
+| 8 | `PUT /friends/accept` | `UpdateItem(PK=USER#uid, SK=FRIEND#requesterUserId, status=ACCEPTED)` × 2（双向更新） | 请求体字段为 `requesterUserId` |
+| 9 | `GET /friends/suggestions/{userId}` | 读取当前用户 profile + 扫描候选 profile，计算兴趣相似度后排序返回 | 当前用户无 profile 时返回空 suggestions |
+
+> 发送好友请求采用宽松模式：后端不强依赖目标用户已有 `PROFILE` 记录，短期可用性更高，但可能出现 profile 字段尚未完善的关系记录。
 
 ### 4.3 活动相关
 

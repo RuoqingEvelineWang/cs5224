@@ -29,7 +29,7 @@
 ```
 Browser (React + Amplify v6)
         │
-        │  HTTPS + Bearer JWT (Cognito ID Token)
+        │  HTTPS + Cognito ID Token
         ▼
 API Gateway REST API  (/prod or /dev stage)
         │
@@ -253,53 +253,61 @@ For each result, fetch the friend's profile via `GetItem` on Users table using `
 
 ---
 
-#### `GET /friends/requests`
-Returns incoming pending friend requests.
+#### `GET /friends/{userId}`
+Returns the user's friend graph snapshot:
+- `friends` (accepted)
+- `incomingRequests` (pending and requested by others)
+- `outgoingRequests` (pending and requested by self)
 
 **Auth:** Required
 
-**DynamoDB:** `Query` on `midmeet-{stage}-friendships`:
+**Notes:**
+- The authenticated user can only access their own `userId`.
+- Friend profile fields are hydrated from user profiles when available.
+
+---
+
+#### `GET /friends/suggestions/{userId}`
+Returns ranked suggestions by interest overlap.
+
+**Auth:** Required
+
+**Behavior detail:** if the current user profile is missing, backend returns:
+```json
+{ "userId": "<id>", "suggestions": [] }
 ```
-KeyConditionExpression: "userId = :uid"
-FilterExpression: "#s = :pending AND requestedBy <> :uid"
-ExpressionAttributeValues: { ":uid": userId, ":pending": "PENDING" }
-```
+instead of 404.
 
 ---
 
 #### `POST /friends/request`
-Send a friend request by email.
+Send a friend request by `targetUserId`.
 
 **Auth:** Required
 
-**Request body:** `{ "email": "bob@example.com" }`
+**Request body:** `{ "targetUserId": "u-bob" }`
 
 **DynamoDB steps:**
-1. `Query` on `midmeet-{stage}-users` using GSI `email-index` to resolve `friendId`
-2. `PutItem` on `midmeet-{stage}-friendships` — record A→B with `status: "PENDING"`, `requestedBy: userId`
-3. `PutItem` — record B→A with same `status` and `requestedBy`
+1. Check whether relationship record already exists (`ACCEPTED`/`PENDING` conflict checks).
+2. `PutItem` A→B friendship record with `status: "PENDING"`, `requestedBy: userId`.
+3. `PutItem` B→A mirrored record with same `status` and `requestedBy`.
+
+**Current constraint (relaxed send mode):**
+- Backend does not hard-require target `PROFILE` existence before writing friendship records.
+- As a result, some rows may reference users whose profile fields are incomplete until profile onboarding finishes.
 
 **Error:** If A→B record already exists, return `409 ALREADY_EXISTS`.
 
 ---
 
-#### `POST /friends/accept`
+#### `PUT /friends/accept`
 Accept a pending friend request.
 
 **Auth:** Required
 
-**Request body:** `{ "friendId": "u-alice" }`
+**Request body:** `{ "requesterUserId": "u-alice" }`
 
 **DynamoDB:** `UpdateItem` both A→B and B→A records to `status: "ACCEPTED"`.
-
----
-
-#### `DELETE /friends/:friendId`
-Remove a friendship (both directions).
-
-**Auth:** Required
-
-**DynamoDB:** `DeleteItem` both `{ userId, friendId }` and `{ userId: friendId, friendId: userId }` records.
 
 ---
 
@@ -908,10 +916,10 @@ const routes: [string, string][] = [
   ['PUT',    '/users/me'],
   ['GET',    '/users/{userId}'],
   ['GET',    '/friends'],
-  ['GET',    '/friends/requests'],
   ['POST',   '/friends/request'],
-  ['POST',   '/friends/accept'],
-  ['DELETE', '/friends/{friendId}'],
+  ['PUT',    '/friends/accept'],
+  ['GET',    '/friends/{userId}'],
+  ['GET',    '/friends/suggestions/{userId}'],
   ['GET',    '/events'],
   ['POST',   '/events'],
   ['GET',    '/events/{eventId}'],
@@ -958,9 +966,9 @@ The routing also differs: REST API uses `event.resource` (path template like `/e
 | Get my profile | users | GetItem | `userId = sub` |
 | Update my profile | users | PutItem/UpdateItem | `userId = sub` |
 | Get user by ID | users | GetItem | `userId = :id` |
-| Lookup user by email | users | Query | GSI `email-index` |
+| Lookup user by ID (profile hydrate) | users | GetItem | `PK=USER#<id>, SK=PROFILE` |
 | Get my friends | friendships | Query + filter | `userId = sub, status = ACCEPTED` |
-| Get friend requests | friendships | Query + filter | `userId = sub, status = PENDING, requestedBy ≠ sub` |
+| Get friend graph snapshot | friendships | Query + classify | `PK=USER#uid, SK begins_with FRIEND#` |
 | Send friend request | friendships | PutItem ×2 | Both directions |
 | Accept request | friendships | UpdateItem ×2 | Both directions |
 | Get my events | event-members | Query (GSI) | `userId-createdAt-index` |
