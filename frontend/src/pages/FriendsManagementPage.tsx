@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { getCurrentUser } from "aws-amplify/auth";
+import { fetchUserAttributes, getCurrentUser } from "aws-amplify/auth";
+import { fetchCurrentUser } from "../api/User.tsx";
 import {
   acceptFriendRequest,
+  declineFriendRequest,
   fetchFriendSuggestions,
   fetchFriends,
   sendFriendRequest,
@@ -18,8 +20,27 @@ function formatScore(score: number): string {
   return `${Math.round(score * 100)}%`;
 }
 
+function resolveRequesterName(
+  userId: string,
+  profileName?: string,
+  cognitoName?: string,
+  username?: string
+): string {
+  const profile = String(profileName || "").trim();
+  if (profile) return profile;
+
+  const name = String(cognitoName || "").trim();
+  if (name) return name;
+
+  const fallback = String(username || "").trim();
+  if (fallback) return fallback;
+
+  return userId;
+}
+
 export default function FriendsManagementPage() {
   const [userId, setUserId] = useState("");
+  const [requesterName, setRequesterName] = useState("");
   const [searchUserId, setSearchUserId] = useState("");
   const [friendsData, setFriendsData] = useState<FriendListResponse | null>(null);
   const [suggestions, setSuggestions] = useState<FriendSuggestion[]>([]);
@@ -55,8 +76,17 @@ export default function FriendsManagementPage() {
     async function bootstrap() {
       try {
         const currentUser = await getCurrentUser();
+        const [attrs, profile] = await Promise.all([
+          fetchUserAttributes().catch(
+            () => ({} as Record<string, string>)
+          ),
+          fetchCurrentUser(currentUser.userId).catch(() => null),
+        ]);
         if (cancelled) return;
         setUserId(currentUser.userId);
+        setRequesterName(
+          resolveRequesterName(currentUser.userId, profile?.name, attrs?.name, currentUser.username)
+        );
         await loadData(currentUser.userId, true);
       } catch (bootstrapError) {
         if (cancelled) return;
@@ -71,7 +101,7 @@ export default function FriendsManagementPage() {
     };
   }, [loadData]);
 
-  async function handleSendRequest(targetUserId: string) {
+  async function handleSendRequest(targetUserId: string, targetName?: string) {
     const trimmed = targetUserId.trim();
     if (!trimmed) {
       setError("Please enter a target user ID.");
@@ -87,8 +117,11 @@ export default function FriendsManagementPage() {
     setError("");
     setInfo("");
     try {
-      await sendFriendRequest(trimmed);
-      setInfo(`Friend request sent to ${trimmed}.`);
+      await sendFriendRequest(trimmed, {
+        requesterName: requesterName || userId,
+        ...(targetName ? { targetName } : {}),
+      });
+      setInfo(`Friend request sent to ${targetName || trimmed}.`);
       setSearchUserId("");
       await loadData(userId, false);
     } catch (requestError) {
@@ -109,6 +142,22 @@ export default function FriendsManagementPage() {
       await loadData(userId, false);
     } catch (acceptError) {
       setError(getErrorMessage(acceptError));
+    } finally {
+      setActionKey(null);
+    }
+  }
+
+  async function handleDeclineRequest(requesterUserId: string) {
+    const key = `decline-${requesterUserId}`;
+    setActionKey(key);
+    setError("");
+    setInfo("");
+    try {
+      await declineFriendRequest(requesterUserId);
+      setInfo(`Friend request from ${requesterUserId} declined.`);
+      await loadData(userId, false);
+    } catch (declineError) {
+      setError(getErrorMessage(declineError));
     } finally {
       setActionKey(null);
     }
@@ -199,16 +248,28 @@ export default function FriendsManagementPage() {
                         <p className="text-sm font-semibold text-gray-900">{request.name}</p>
                         <p className="text-xs text-gray-500">{request.userId}</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleAcceptRequest(request.userId);
-                        }}
-                        disabled={actionKey === `accept-${request.userId}`}
-                        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                      >
-                        {actionKey === `accept-${request.userId}` ? "Accepting..." : "Accept"}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleAcceptRequest(request.userId);
+                          }}
+                          disabled={actionKey === `accept-${request.userId}` || actionKey === `decline-${request.userId}`}
+                          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          {actionKey === `accept-${request.userId}` ? "Accepting..." : "Accept"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleDeclineRequest(request.userId);
+                          }}
+                          disabled={actionKey === `accept-${request.userId}` || actionKey === `decline-${request.userId}`}
+                          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {actionKey === `decline-${request.userId}` ? "Declining..." : "Decline"}
+                        </button>
+                      </div>
                     </div>
                     {request.interests.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
@@ -312,7 +373,7 @@ export default function FriendsManagementPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    void handleSendRequest(suggestion.userId);
+                    void handleSendRequest(suggestion.userId, suggestion.name);
                   }}
                   disabled={actionKey === `request-${suggestion.userId}`}
                   className="mt-4 w-full rounded-lg border border-indigo-200 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"

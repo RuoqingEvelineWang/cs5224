@@ -116,6 +116,12 @@ export class CdkStack extends cdk.Stack {
     // POST /events
     eventsResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
 
+    // Users routes
+    const usersResource = api.root.addResource('users');
+    const usersMeResource = usersResource.addResource('me');
+    usersMeResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+    usersMeResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
+
     // Friends routes
     const friendsResource = api.root.addResource('friends');
     friendsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
@@ -125,6 +131,9 @@ export class CdkStack extends cdk.Stack {
 
     const friendAcceptResource = friendsResource.addResource('accept');
     friendAcceptResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
+
+    const friendDeclineResource = friendsResource.addResource('decline');
+    friendDeclineResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
 
     const friendByUserResource = friendsResource.addResource('{userId}');
     friendByUserResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);

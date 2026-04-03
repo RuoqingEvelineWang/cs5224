@@ -51,7 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: token,
       ...(init?.headers || {}),
     },
   });
@@ -93,15 +93,29 @@ export async function fetchFriendSuggestions(userId: string): Promise<FriendSugg
   return response.suggestions;
 }
 
-export async function sendFriendRequest(targetUserId: string): Promise<void> {
+export async function sendFriendRequest(
+  targetUserId: string,
+  options?: { requesterName?: string; targetName?: string }
+): Promise<void> {
   await request<{ message: string }>("/friends/request", {
     method: "POST",
-    body: JSON.stringify({ targetUserId }),
+    body: JSON.stringify({
+      targetUserId,
+      ...(options?.requesterName ? { requesterName: options.requesterName } : {}),
+      ...(options?.targetName ? { targetName: options.targetName } : {}),
+    }),
   });
 }
 
 export async function acceptFriendRequest(requesterUserId: string): Promise<void> {
   await request<{ message: string }>("/friends/accept", {
+    method: "PUT",
+    body: JSON.stringify({ requesterUserId }),
+  });
+}
+
+export async function declineFriendRequest(requesterUserId: string): Promise<void> {
+  await request<{ message: string }>("/friends/decline", {
     method: "PUT",
     body: JSON.stringify({ requesterUserId }),
   });

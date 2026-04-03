@@ -28,11 +28,6 @@ export async function sendFriendRequest(userId, body, docClient) {
     throw new HttpError(400, "You cannot send a friend request to yourself.");
   }
 
-  const targetProfile = await getUserProfile(targetUserId, docClient);
-  if (!targetProfile) {
-    throw new HttpError(404, "Target user does not exist.");
-  }
-
   const existingRelationship = await getRelationship(userId, targetUserId, docClient);
   if (existingRelationship) {
     const status = normalizeStatus(existingRelationship.status);
@@ -48,6 +43,17 @@ export async function sendFriendRequest(userId, body, docClient) {
     }
   }
 
+  const requesterNameFromBody = normalizeOptionalName(body?.requesterName);
+  const targetNameFromBody = normalizeOptionalName(body?.targetName);
+  const [requesterProfile, targetProfile] = await Promise.all([
+    getUserProfile(userId, docClient),
+    getUserProfile(targetUserId, docClient),
+  ]);
+  const requesterSnapshotName =
+    normalizeOptionalName(requesterProfile?.name) || requesterNameFromBody;
+  const targetSnapshotName =
+    normalizeOptionalName(targetProfile?.name) || targetNameFromBody;
+
   const now = new Date().toISOString();
   const requesterRecord = {
     PK: userPk(userId),
@@ -59,6 +65,7 @@ export async function sendFriendRequest(userId, body, docClient) {
     requestedBy: userId,
     createdAt: now,
     updatedAt: now,
+    ...(targetSnapshotName ? { name: targetSnapshotName } : {}),
   };
 
   const recipientRecord = {
@@ -71,6 +78,7 @@ export async function sendFriendRequest(userId, body, docClient) {
     requestedBy: userId,
     createdAt: now,
     updatedAt: now,
+    ...(requesterSnapshotName ? { name: requesterSnapshotName } : {}),
   };
 
   try {
@@ -181,6 +189,61 @@ export async function acceptFriendRequest(userId, body, docClient) {
   return { message: "Friend request accepted." };
 }
 
+export async function declineFriendRequest(userId, body, docClient) {
+  ensureTableName();
+
+  const requesterUserId = String(body?.requesterUserId || "").trim();
+  if (!requesterUserId) {
+    throw new HttpError(400, "requesterUserId is required.");
+  }
+
+  if (requesterUserId === userId) {
+    throw new HttpError(400, "Invalid requesterUserId.");
+  }
+
+  const incomingRelationship = await getRelationship(userId, requesterUserId, docClient);
+  if (!incomingRelationship) {
+    throw new HttpError(404, "Friend request not found.");
+  }
+
+  const status = normalizeStatus(incomingRelationship.status);
+  if (status !== "PENDING") {
+    throw new HttpError(409, "Friend relationship is not in a pending state.");
+  }
+
+  if (incomingRelationship.requestedBy !== requesterUserId) {
+    throw new HttpError(400, "Only incoming friend requests can be declined.");
+  }
+
+  try {
+    await docClient.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Delete: {
+            TableName: TABLE_NAME,
+            Key: { PK: userPk(userId), SK: friendSk(requesterUserId) },
+            ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
+          },
+        },
+        {
+          Delete: {
+            TableName: TABLE_NAME,
+            Key: { PK: userPk(requesterUserId), SK: friendSk(userId) },
+            ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
+          },
+        },
+      ],
+    }));
+  } catch (error) {
+    if (error?.name === "TransactionCanceledException") {
+      throw new HttpError(404, "Friend request not found.");
+    }
+    throw error;
+  }
+
+  return { message: "Friend request declined." };
+}
+
 export async function listFriendsByUserId(userId, docClient) {
   ensureTableName();
 
@@ -244,7 +307,10 @@ export async function listFriendSuggestions(userId, docClient) {
 
   const currentProfile = await getUserProfile(userId, docClient);
   if (!currentProfile) {
-    throw new HttpError(404, "Current user profile does not exist.");
+    return {
+      userId,
+      suggestions: [],
+    };
   }
 
   const currentInterests = toStringArray(currentProfile.interests);
@@ -360,6 +426,11 @@ function toStringArray(value) {
   }
 
   return Array.from(deduped);
+}
+
+function normalizeOptionalName(value) {
+  const text = String(value || "").trim();
+  return text || "";
 }
 
 function normalizeInterest(value) {

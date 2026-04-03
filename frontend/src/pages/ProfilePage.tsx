@@ -1,11 +1,14 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { fetchUserAttributes } from "aws-amplify/auth";
+import { fetchCurrentUser, updateUser } from "../api/User";
+import type { User } from "../api/User";
 import {
-  fetchCurrentUser, updateUser,
-  fetchFriends, fetchFriendRequests,
-  acceptFriendRequest, declineFriendRequest,
-  removeFriend, searchUsers, sendFriendRequest,
-} from "../api/User";
-import type { User, FriendEntry, FriendRequest } from "../api/User";
+  acceptFriendRequest,
+  declineFriendRequest,
+  fetchFriends,
+  sendFriendRequest,
+  type FriendListResponse,
+} from "../api/friendService";
 
 const TRANSPORT_OPTIONS = ["Walking", "Cycling", "Public Transport", "Car"];
 const INTEREST_OPTIONS = [
@@ -157,57 +160,135 @@ function ProfileTab({
 
 // ─── Friend Management Tab ────────────────────────────────────────────────────
 
-function FriendManagementTab() {
-  const [friends, setFriends] = useState<FriendEntry[]>([]);
-  const [requests, setRequests] = useState<FriendRequest[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<FriendEntry[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [actioningId, setActioningId] = useState<string | null>(null);
-  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return "Something went wrong. Please try again.";
+}
+
+function resolveRequesterName(userId: string, profileName?: string, cognitoName?: string): string {
+  const profile = String(profileName || "").trim();
+  if (profile) return profile;
+
+  const name = String(cognitoName || "").trim();
+  return name || userId;
+}
+
+function FriendManagementTab({ userId }: { userId: string }) {
+  const [friendsData, setFriendsData] = useState<FriendListResponse | null>(null);
+  const [targetUserId, setTargetUserId] = useState("");
+  const [requesterName, setRequesterName] = useState(userId);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionKey, setActionKey] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+
+  const loadData = useCallback(async (showLoader: boolean) => {
+    if (showLoader) setLoading(true);
+    else setRefreshing(true);
+
+    try {
+      const data = await fetchFriends(userId);
+      setFriendsData(data);
+      setError("");
+    } catch (loadError) {
+      setError(getErrorMessage(loadError));
+    } finally {
+      if (showLoader) setLoading(false);
+      else setRefreshing(false);
+    }
+  }, [userId]);
 
   useEffect(() => {
-    Promise.all([fetchFriends(), fetchFriendRequests()]).then(([f, r]) => {
-      setFriends(f); setRequests(r); setLoading(false);
-    });
-  }, []);
+    let cancelled = false;
 
-  async function handleSearch() {
-    if (!searchQuery.trim()) return;
-    setSearching(true);
-    const results = await searchUsers(searchQuery);
-    setSearchResults(results);
-    setSearching(false);
+    async function bootstrap() {
+      try {
+        const [attrs, profile] = await Promise.all([
+          fetchUserAttributes().catch(
+            () => ({} as Record<string, string>)
+          ),
+          fetchCurrentUser(userId).catch(() => null),
+        ]);
+        if (!cancelled) {
+          setRequesterName(resolveRequesterName(userId, profile?.name, attrs?.name));
+        }
+      } catch {
+        if (!cancelled) {
+          setRequesterName(userId);
+        }
+      }
+
+      if (!cancelled) {
+        await loadData(true);
+      }
+    }
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadData, userId]);
+
+  async function handleSendRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = targetUserId.trim();
+
+    if (!trimmed) {
+      setError("Please enter a target user ID.");
+      return;
+    }
+
+    if (trimmed === userId) {
+      setError("You cannot send a friend request to yourself.");
+      return;
+    }
+
+    setActionKey(`request-${trimmed}`);
+    setError("");
+    setInfo("");
+    try {
+      await sendFriendRequest(trimmed, {
+        requesterName: requesterName || userId,
+      });
+      setInfo(`Friend request sent to ${trimmed}.`);
+      setTargetUserId("");
+      await loadData(false);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setActionKey(null);
+    }
   }
 
-  async function handleAccept(req: FriendRequest) {
-    setActioningId(req.requestId);
-    await acceptFriendRequest(req.requestId);
-    const [f, r] = await Promise.all([fetchFriends(), fetchFriendRequests()]);
-    setFriends(f); setRequests(r);
-    setActioningId(null);
+  async function handleAccept(requesterUserId: string) {
+    setActionKey(`accept-${requesterUserId}`);
+    setError("");
+    setInfo("");
+    try {
+      await acceptFriendRequest(requesterUserId);
+      setInfo(`You are now friends with ${requesterUserId}.`);
+      await loadData(false);
+    } catch (acceptError) {
+      setError(getErrorMessage(acceptError));
+    } finally {
+      setActionKey(null);
+    }
   }
 
-  async function handleDeclineReq(req: FriendRequest) {
-    setActioningId(req.requestId);
-    await declineFriendRequest(req.requestId);
-    setRequests(r => r.filter(x => x.requestId !== req.requestId));
-    setActioningId(null);
-  }
-
-  async function handleRemoveFriend(friendId: string) {
-    setActioningId(friendId);
-    await removeFriend(friendId);
-    setFriends(f => f.filter(x => x.userId !== friendId));
-    setActioningId(null);
-  }
-
-  async function handleSendRequest(user: FriendEntry) {
-    setActioningId(user.userId);
-    await sendFriendRequest(user.userId, user.name);
-    setSentIds(prev => new Set([...prev, user.userId]));
-    setActioningId(null);
+  async function handleDecline(requesterUserId: string) {
+    setActionKey(`decline-${requesterUserId}`);
+    setError("");
+    setInfo("");
+    try {
+      await declineFriendRequest(requesterUserId);
+      setInfo(`Friend request from ${requesterUserId} declined.`);
+      await loadData(false);
+    } catch (declineError) {
+      setError(getErrorMessage(declineError));
+    } finally {
+      setActionKey(null);
+    }
   }
 
   if (loading) {
@@ -216,126 +297,140 @@ function FriendManagementTab() {
 
   return (
     <div className="space-y-6">
+      {error && <div className="px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
+      {info && <div className="px-4 py-3 rounded-lg bg-emerald-50 border border-emerald-200 text-sm text-emerald-700">{info}</div>}
 
-      {/* ── Friend Requests ── */}
-      {requests.length > 0 && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-gray-700">Friend Requests</h3>
-            <span className="text-xs bg-red-100 text-red-600 font-semibold px-1.5 py-0.5 rounded-full">{requests.length}</span>
-          </div>
-          <ul className="space-y-3">
-            {requests.map(req => (
-              <li key={req.requestId} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-sm font-bold text-indigo-600 shrink-0">
-                  {req.fromName[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800">{req.fromName}</p>
-                  <p className="text-xs text-gray-500 truncate">{req.fromInterests.join(', ')}</p>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button onClick={() => handleAccept(req)} disabled={actioningId === req.requestId}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                    {actioningId === req.requestId ? '…' : 'Accept'}
-                  </button>
-                  <button onClick={() => handleDeclineReq(req)} disabled={actioningId === req.requestId}
-                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors">
-                    Decline
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-gray-700">Add Friend by User ID</h3>
+          <button
+            type="button"
+            onClick={() => {
+              setInfo("");
+              void loadData(false);
+            }}
+            disabled={refreshing}
+            className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
-      )}
+        <form onSubmit={handleSendRequest} className="flex gap-2">
+          <input
+            type="text"
+            value={targetUserId}
+            onChange={(event) => setTargetUserId(event.target.value)}
+            placeholder="Enter target user ID"
+            className="flex-1 px-3.5 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          />
+          <button
+            type="submit"
+            disabled={targetUserId.trim().length === 0 || actionKey === `request-${targetUserId.trim()}`}
+            className="px-4 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {actionKey === `request-${targetUserId.trim()}` ? "Sending..." : "Send"}
+          </button>
+        </form>
+      </div>
 
-      {/* ── Current Friends ── */}
       <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-700">My Friends</h3>
-          <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">{friends.length}</span>
+          <h3 className="text-sm font-semibold text-gray-700">Incoming Requests</h3>
+          <span className="text-xs bg-red-100 text-red-600 font-semibold px-1.5 py-0.5 rounded-full">
+            {friendsData?.incomingRequests.length || 0}
+          </span>
         </div>
-        {friends.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-4">No friends yet. Use the search below to add some!</p>
+        {(friendsData?.incomingRequests || []).length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">No incoming friend requests.</p>
         ) : (
           <ul className="space-y-3">
-            {friends.map(friend => (
-              <li key={friend.userId} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+            {(friendsData?.incomingRequests || []).map((request) => (
+              <li key={request.userId} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
                 <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-sm font-bold text-indigo-600 shrink-0">
-                  {friend.name[0]}
+                  {(request.name || request.userId)[0]}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-800">{friend.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{friend.interests.join(', ')}</p>
-                  {friend.since && <p className="text-xs text-gray-400 mt-0.5">Friends since {friend.since}</p>}
+                  <p className="text-sm font-semibold text-gray-800">{request.name}</p>
+                  <p className="text-xs text-gray-500 break-all">{request.userId}</p>
+                  {request.interests.length > 0 && (
+                    <p className="text-xs text-gray-500 truncate">{request.interests.join(", ")}</p>
+                  )}
                 </div>
-                <button
-                  onClick={() => handleRemoveFriend(friend.userId)}
-                  disabled={actioningId === friend.userId}
-                  className="text-xs text-red-400 hover:text-red-600 disabled:opacity-50 transition-colors px-2 py-1 rounded-lg hover:bg-red-50"
-                >
-                  {actioningId === friend.userId ? '…' : 'Remove'}
-                </button>
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleAccept(request.userId);
+                    }}
+                    disabled={actionKey === `accept-${request.userId}` || actionKey === `decline-${request.userId}`}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    {actionKey === `accept-${request.userId}` ? "..." : "Accept"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleDecline(request.userId);
+                    }}
+                    disabled={actionKey === `accept-${request.userId}` || actionKey === `decline-${request.userId}`}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {actionKey === `decline-${request.userId}` ? "..." : "Decline"}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </div>
 
-      {/* ── Search & Add ── */}
       <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-gray-700">Add Friends</h3>
-        <div className="flex gap-2">
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            placeholder="Search by name or email…"
-            className="flex-1 px-3.5 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          />
-          <button
-            onClick={handleSearch}
-            disabled={searching || !searchQuery.trim()}
-            className="px-4 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-          >
-            {searching ? '…' : 'Search'}
-          </button>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-gray-700">Outgoing Requests</h3>
+          <span className="text-xs bg-amber-100 text-amber-700 font-semibold px-1.5 py-0.5 rounded-full">
+            {friendsData?.outgoingRequests.length || 0}
+          </span>
         </div>
-
-        {searchResults.length > 0 && (
+        {(friendsData?.outgoingRequests || []).length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">No outgoing requests.</p>
+        ) : (
           <ul className="space-y-2">
-            {searchResults.map(user => {
-              const sent = sentIds.has(user.userId);
-              return (
-                <li key={user.userId} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
-                  <div className="w-9 h-9 rounded-full bg-stone-100 flex items-center justify-center text-sm font-bold text-stone-600 shrink-0">
-                    {user.name[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">{user.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{user.interests.join(', ')}</p>
-                  </div>
-                  <button
-                    onClick={() => handleSendRequest(user)}
-                    disabled={sent || actioningId === user.userId}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                      sent
-                        ? 'bg-gray-100 text-gray-400 cursor-default'
-                        : 'bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50'
-                    }`}
-                  >
-                    {sent ? 'Sent ✓' : actioningId === user.userId ? '…' : 'Add Friend'}
-                  </button>
-                </li>
-              );
-            })}
+            {(friendsData?.outgoingRequests || []).map((request) => (
+              <li key={request.userId} className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <p className="text-sm font-semibold text-gray-800">{request.name}</p>
+                <p className="text-xs text-gray-500 break-all">{request.userId}</p>
+              </li>
+            ))}
           </ul>
         )}
+      </div>
 
-        {searchResults.length === 0 && searchQuery && !searching && (
-          <p className="text-sm text-gray-400 text-center py-2">No users found for "{searchQuery}".</p>
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-gray-700">My Friends</h3>
+          <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">
+            {friendsData?.friends.length || 0}
+          </span>
+        </div>
+        {(friendsData?.friends || []).length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">No friends yet.</p>
+        ) : (
+          <ul className="space-y-3">
+            {(friendsData?.friends || []).map((friend) => (
+              <li key={friend.userId} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-sm font-bold text-indigo-600 shrink-0">
+                  {(friend.name || friend.userId)[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">{friend.name}</p>
+                  <p className="text-xs text-gray-500 break-all">{friend.userId}</p>
+                  {friend.interests.length > 0 && (
+                    <p className="text-xs text-gray-500 truncate">{friend.interests.join(", ")}</p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>
@@ -379,7 +474,7 @@ export default function ProfilePage({
       </div>
 
       {activeTab === 'profile' && <ProfileTab userId={userId} onNameChange={onNameChange} />}
-      {activeTab === 'friends' && <FriendManagementTab />}
+      {activeTab === 'friends' && <FriendManagementTab userId={userId} />}
     </div>
   );
 }

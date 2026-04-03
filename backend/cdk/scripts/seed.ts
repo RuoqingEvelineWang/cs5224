@@ -4,12 +4,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const TABLE_NAME = process.env.MAIN_TABLE || 'midmeet-dev-main';
+const AWS_REGION = process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'ap-southeast-1';
 
-const client = new DynamoDBClient({ region: "ap-southeast-2" });
+const client = new DynamoDBClient({ region: AWS_REGION });
 const docClient = DynamoDBDocumentClient.from(client);
 
 async function seedData() {
-  console.log(`Seeding data into ${TABLE_NAME}...`);
+  console.log(`Seeding data into ${TABLE_NAME} in ${AWS_REGION}...`);
   
   const dataPath = path.join(__dirname, 'test-data.json');
   const items = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));

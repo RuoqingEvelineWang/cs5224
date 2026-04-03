@@ -4,9 +4,11 @@ import { getEvents } from "./handlers/getEvents.js";
 import { getEventById } from "./handlers/getEventById.js";
 import { getFriends } from "./handlers/getFriends.js";
 import { createEvent } from "./handlers/createEvent.js";
+import { getMyProfile, upsertMyProfile } from "./handlers/userHandlers.js";
 import {
   sendFriendRequest,
   acceptFriendRequest,
+  declineFriendRequest,
   listFriendsByUserId,
   listFriendSuggestions,
 } from "./handlers/friendHandlers.js";
@@ -43,6 +45,18 @@ export const handler = async (event) => {
   }
 
   try {
+    if (isRoute(method, resource, path, "GET", "/users/me")) {
+      const data = await getMyProfile(userId, docClient);
+      return respond(200, data);
+    }
+
+    if (isRoute(method, resource, path, "PUT", "/users/me")) {
+      const body = parseJsonBody(event);
+      const claims = getAuthClaims(event);
+      const data = await upsertMyProfile(userId, body, claims, docClient);
+      return respond(200, data);
+    }
+
     if (isRoute(method, resource, path, "GET", "/events")) {
       const data = await getEvents(userId, docClient);
       return respond(200, { data, error: null });
@@ -85,6 +99,12 @@ export const handler = async (event) => {
       return respond(200, data);
     }
 
+    if (isRoute(method, resource, path, "PUT", "/friends/decline")) {
+      const body = parseJsonBody(event);
+      const data = await declineFriendRequest(userId, body, docClient);
+      return respond(200, data);
+    }
+
     if (isFriendSuggestionsRoute(method, resource, path)) {
       const requestedUserId = getPathUserId(event, 2);
       assertSelfAccess(requestedUserId, userId);
@@ -119,10 +139,15 @@ function getHttpMethod(event) {
 }
 
 function getAuthUserId(event) {
+  const claims = getAuthClaims(event);
+  return claims?.sub || null;
+}
+
+function getAuthClaims(event) {
   return (
-    event?.requestContext?.authorizer?.claims?.sub ||
-    event?.requestContext?.authorizer?.jwt?.claims?.sub ||
-    null
+    event?.requestContext?.authorizer?.claims ||
+    event?.requestContext?.authorizer?.jwt?.claims ||
+    {}
   );
 }
 

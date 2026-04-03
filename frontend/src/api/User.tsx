@@ -1,3 +1,5 @@
+import { fetchAuthSession } from "aws-amplify/auth";
+
 // ─── User & Friend API ────────────────────────────────────────────────────────
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,8 +31,6 @@ export type FriendRequest = {
 
 // ─── Mock Stores ──────────────────────────────────────────────────────────────
 
-const mockUserStore: Record<string, User> = {};
-
 // Mock friend relationships for current user
 let mockFriends: FriendEntry[] = [
   { userId: 'u-alice',   name: 'Alice',   email: 'alice@example.com',   interests: ['Food', 'Cafe', 'Board Games'], since: '2025-11-10' },
@@ -58,41 +58,106 @@ let mockFriendRequests: FriendRequest[] = [
 
 // ─── User API ─────────────────────────────────────────────────────────────────
 
+const API_BASE_URL = String(import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+
+class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function getIdToken(): Promise<string> {
+  const session = await fetchAuthSession();
+  const token = session.tokens?.idToken?.toString();
+  if (!token) {
+    throw new Error("Unable to get auth token. Please sign in again.");
+  }
+  return token;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!API_BASE_URL) {
+    throw new Error("VITE_API_URL is missing. Please configure frontend/.env.");
+  }
+
+  const token = await getIdToken();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: token,
+      ...(init?.headers || {}),
+    },
+  });
+
+  const raw = await response.text();
+  let payload: unknown = {};
+  if (raw) {
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = { message: raw };
+    }
+  }
+
+  if (!response.ok) {
+    const message =
+      typeof payload === "object" &&
+      payload !== null &&
+      "message" in payload &&
+      typeof payload.message === "string"
+        ? payload.message
+        : `Request failed (${response.status})`;
+    throw new ApiError(response.status, message);
+  }
+
+  return payload as T;
+}
+
 export async function createUser(userId: string, name: string, email: string): Promise<void> {
-  return new Promise(resolve => {
-    setTimeout(() => {
-      if (!mockUserStore[userId]) {
-        mockUserStore[userId] = { userId, name, email, address: '', transportType: '', interests: [] };
-      }
-      resolve();
-    }, 300);
+  await request<User>("/users/me", {
+    method: "PUT",
+    body: JSON.stringify({
+      userId,
+      name: String(name || "").trim(),
+      email: String(email || "").trim(),
+      address: "",
+      transportType: "",
+      interests: [],
+    }),
   });
 }
 
 export async function fetchCurrentUser(userId: string): Promise<User | null> {
-  return new Promise(resolve => {
-    setTimeout(() => resolve(mockUserStore[userId] ?? null), 300);
-  });
+  void userId;
+  try {
+    return await request<User>("/users/me", {
+      method: "GET",
+    });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function updateUser(
   userId: string,
   data: Pick<User, 'name' | 'address' | 'transportType' | 'interests'>
 ): Promise<User> {
-  return new Promise(resolve => {
-    setTimeout(() => {
-      const existing = mockUserStore[userId];
-      const updated: User = {
-        userId,
-        name: data.name,
-        email: existing?.email ?? '',
-        address: data.address,
-        transportType: data.transportType,
-        interests: data.interests,
-      };
-      mockUserStore[userId] = updated;
-      resolve(updated);
-    }, 400);
+  return request<User>("/users/me", {
+    method: "PUT",
+    body: JSON.stringify({
+      userId,
+      name: String(data.name || "").trim(),
+      address: String(data.address || "").trim(),
+      transportType: String(data.transportType || "").trim(),
+      interests: Array.isArray(data.interests) ? data.interests : [],
+    }),
   });
 }
 
