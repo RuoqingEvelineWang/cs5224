@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createFullEvent } from '../api/Event.tsx';
-import { fetchFriends } from '../api/eventService';
-import type { FriendProfile } from '../types/event';
+import { fetchAuthSession } from 'aws-amplify/auth';
+
+interface FriendProfile {
+  userId: string;
+  name: string;
+  email?: string;
+  interests: string[];
+}
 
 const VENUE_TYPES = ['Cafe', 'Park', 'Restaurant', 'Mall', 'Library', 'Sports Hall'] as const;
 
@@ -12,6 +17,7 @@ export default function EventCreationWizard() {
   // Step 1 — invite friends
   const [friends, setFriends] = useState<FriendProfile[]>([]);
   const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(true);
 
   // Step 2 — event details
   const [title, setTitle] = useState('');
@@ -24,7 +30,42 @@ export default function EventCreationWizard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchFriends().then(setFriends);
+    async function loadFriends() {
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        const apiUrl = import.meta.env.VITE_API_URL;
+
+        if (!token || !apiUrl) throw new Error("Missing Auth token or API URL");
+
+        const response = await fetch(`${apiUrl}/friends`, {
+          method: 'GET',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) throw new Error("Failed to fetch friends");
+
+        const { data } = await response.json();
+        
+        const mappedFriends: FriendProfile[] = data.map((f: any) => ({
+          userId: f.id,
+          name: f.name,
+          email: f.email,
+          interests: f.hobbies || [] // Map the DB 'hobbies' array to 'interests'
+        }));
+        
+        setFriends(mappedFriends);
+      } catch (err) {
+        console.error("Error loading friends:", err);
+      } finally {
+        setLoadingFriends(false);
+      }
+    }
+
+    loadFriends();
   }, []);
 
   const canGoNext = selectedFriendIds.length > 0;
@@ -42,23 +83,44 @@ export default function EventCreationWizard() {
     );
   }
 
-  async function handleCreate() {
+async function handleCreate() {
     if (!canCreate) return;
     setSubmitting(true);
     setError(null);
     try {
-      const selectedFriends = friends.filter(f => selectedFriendIds.includes(f.userId));
-      const newEvent = await createFullEvent({
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+
+      if (!token || !apiUrl) throw new Error("Missing Auth token or API URL");
+
+      const payload = {
         title: title.trim(),
-        participantIds: selectedFriendIds,
-        participantNames: selectedFriends.map(f => f.name),
+        description: description.trim() || undefined,
         venueType,
         dateRange: { start: dateStart, end: dateEnd },
-        isPublic: false,
-        description: description.trim() || undefined,
+        participantIds: selectedFriendIds,
+      };
+
+      const response = await fetch(`${apiUrl}/events`, {
+        method: 'POST',
+        headers: {
+          'Authorization': token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
       });
+
+      if (!response.ok) {
+        throw new Error("Failed to create event in database");
+      }
+
+      const { data: newEvent } = await response.json();
+      
       navigate(`/events/${newEvent.eventId}/workspace`);
-    } catch {
+      
+    } catch (err) {
+      console.error(err);
       setError('Unable to create event. Please try again.');
     } finally {
       setSubmitting(false);
@@ -97,35 +159,51 @@ export default function EventCreationWizard() {
         <article className="rounded-2xl bg-white p-5 shadow-sm">
           <h3 className="text-lg font-semibold text-stone-800">Invite Friends</h3>
           <p className="mt-1 text-sm text-stone-500">Select at least one friend to invite.</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {friends.map(friend => {
-              const selected = selectedFriendIds.includes(friend.userId);
-              return (
-                <button
-                  key={friend.userId}
-                  type="button"
-                  onClick={() => toggleFriend(friend.userId)}
-                  className={`rounded-xl border p-3 text-left transition-all ${
-                    selected
-                      ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300'
-                      : 'border-stone-200 hover:border-stone-400'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                      selected ? 'bg-indigo-600 text-white' : 'bg-stone-100 text-stone-600'
-                    }`}>
-                      {friend.name[0]}
+          
+          {loadingFriends ? (
+             <div className="flex items-center gap-2 text-sm text-stone-500 py-6">
+               <div className="w-4 h-4 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+               Loading friends list...
+             </div>
+          ) : friends.length === 0 ? (
+             <p className="text-sm text-stone-500 py-6">You don't have any friends added yet.</p>
+          ) : (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {friends.map(friend => {
+                const selected = selectedFriendIds.includes(friend.userId);
+                return (
+                  <button
+                    key={friend.userId}
+                    type="button"
+                    onClick={() => toggleFriend(friend.userId)}
+                    className={`rounded-xl border p-3 text-left transition-all ${
+                      selected
+                        ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300'
+                        : 'border-stone-200 hover:border-stone-400'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        selected ? 'bg-indigo-600 text-white' : 'bg-stone-100 text-stone-600'
+                      }`}>
+                        {friend.name[0]}
+                      </div>
+                      <div>
+                        <p className="font-medium text-stone-800 text-sm">{friend.name}</p>
+                        {friend.interests.length > 0 && (
+                          <p className="text-xs text-stone-500 mt-0.5">
+                            {friend.interests.slice(0, 2).join(', ')}
+                            {friend.interests.length > 2 && ' +'}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-stone-800 text-sm">{friend.name}</p>
-                      <p className="text-xs text-stone-500">{friend.interests.slice(0, 2).join(', ')}</p>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           <div className="mt-5 flex justify-end">
             <button
               type="button"
@@ -190,13 +268,21 @@ export default function EventCreationWizard() {
           </label>
 
           {/* Date Range */}
+          {/* Date Range */}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium text-stone-700">Availability Start <span className="text-red-400">*</span></span>
               <input
                 type="date"
                 value={dateStart}
-                onChange={e => setDateStart(e.target.value)}
+                min={new Date().toLocaleDateString('en-CA')} // 'en-CA' outputs YYYY-MM-DD precisely
+                onChange={e => {
+                  setDateStart(e.target.value);
+                  // Auto-update end date if it's now earlier than the new start date
+                  if (dateEnd && e.target.value > dateEnd) {
+                    setDateEnd(e.target.value);
+                  }
+                }}
                 className="mt-1 w-full rounded-xl border border-stone-300 px-4 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
               />
             </label>
@@ -205,6 +291,7 @@ export default function EventCreationWizard() {
               <input
                 type="date"
                 value={dateEnd}
+                min={dateStart || new Date().toLocaleDateString('en-CA')} // End date cannot be before start date
                 onChange={e => setDateEnd(e.target.value)}
                 className="mt-1 w-full rounded-xl border border-stone-300 px-4 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
               />

@@ -5,79 +5,71 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 
+
 export class CdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    const appName = 'midmeet';
-    const stage = (this.node.tryGetContext('stage') ?? 'dev') as 'dev' | 'prod';
-    const prefix = `${appName}-${stage}`;
-    const removalPolicy =
-      stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+    // 1. Define the Stage (default to 'dev' if not provided)
+    const stage = process.env.STAGE || 'dev';
+    const prefix = `midmeet-${stage}`;
 
-    // DynamoDB Tables
-    const usersTable = new dynamodb.Table(this, 'UsersTable', {
-      tableName: `${prefix}-users`,
-      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+    // 2. Define the Single Main Table
+    const mainTable = new dynamodb.Table(this, 'MidMeetMainTable', {
+      tableName: `${prefix}-main`,
+      partitionKey: { 
+        name: 'PK', 
+        type: dynamodb.AttributeType.STRING 
+      },
+      sortKey: { 
+        name: 'SK', 
+        type: dynamodb.AttributeType.STRING 
+      },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecovery: true,
-      removalPolicy,
+      // Change to RETAIN for production environments
+      removalPolicy: cdk.RemovalPolicy.DESTROY, 
     });
 
-    usersTable.addGlobalSecondaryIndex({
-      indexName: 'email-index',
-      partitionKey: { name: 'email', type: dynamodb.AttributeType.STRING },
+    // 3. GSI1: User-Centric Event Lookup 
+    // Supports: "Get all events for User X"
+    mainTable.addGlobalSecondaryIndex({
+      indexName: 'GSI1',
+      partitionKey: { 
+        name: 'GSI1PK', 
+        type: dynamodb.AttributeType.STRING 
+      },
+      sortKey: { 
+        name: 'GSI1SK', 
+        type: dynamodb.AttributeType.STRING 
+      },
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
-    const friendshipsTable = new dynamodb.Table(this, 'FriendshipsTable', {
-      tableName: `${prefix}-friendships`,
-      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'friendId', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
-      removalPolicy,
-    });
-
-    const eventsTable = new dynamodb.Table(this, 'EventsTable', {
-      tableName: `${prefix}-events`,
-      partitionKey: { name: 'eventId', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
-      removalPolicy,
-    });
-
-    eventsTable.addGlobalSecondaryIndex({
-      indexName: 'creatorId-createdAt-index',
-      partitionKey: { name: 'creatorId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+    // 4. GSI2: Email Lookup
+    // Supports: "Find User by Email"
+    mainTable.addGlobalSecondaryIndex({
+      indexName: 'GSI2',
+      partitionKey: { 
+        name: 'GSI2PK', 
+        type: dynamodb.AttributeType.STRING 
+      },
+      sortKey: { 
+        name: 'GSI2SK', 
+        type: dynamodb.AttributeType.STRING 
+      },
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
-    const eventMembersTable = new dynamodb.Table(this, 'EventMembersTable', {
-      tableName: `${prefix}-event-members`,
-      partitionKey: { name: 'eventId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
-      removalPolicy,
-    });
-
-    eventMembersTable.addGlobalSecondaryIndex({
-      indexName: 'userId-createdAt-index',
-      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
-      sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
-      projectionType: dynamodb.ProjectionType.ALL,
-    });
 
     // Cognito
     const userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: true,
-      signInAliases: { email: true },
+      signInAliases: { email: true }
     });
 
     const userPoolClient = new cognito.UserPoolClient(this, 'UserPoolClient', {
-      userPool,
+      userPool
     });
 
     // Lambda
@@ -86,91 +78,75 @@ export class CdkStack extends cdk.Stack {
       handler: 'index.handler',
       code: lambda.Code.fromAsset('../lambda'),
       environment: {
-        STAGE: stage,
-        USERS_TABLE: usersTable.tableName,
-        FRIENDSHIPS_TABLE: friendshipsTable.tableName,
-        EVENTS_TABLE: eventsTable.tableName,
-        EVENT_MEMBERS_TABLE: eventMembersTable.tableName,
-      },
+        MAIN_TABLE: mainTable.tableName,
+        MAIN_TABLE_GSI1: 'GSI1',
+        MAIN_TABLE_GSI2: 'GSI2',
+        ONEMAP_EMAIL: process.env.ONEMAP_EMAIL || '',
+        ONEMAP_PASSWORD: process.env.ONEMAP_PASSWORD || '',
+      }
     });
 
-    usersTable.grantReadWriteData(apiLambda);
-    friendshipsTable.grantReadWriteData(apiLambda);
-    eventsTable.grantReadWriteData(apiLambda);
-    eventMembersTable.grantReadWriteData(apiLambda);
+    mainTable.grantReadWriteData(apiLambda);
 
-    // API Gateway
+    // API Gateway setup
     const api = new apigateway.RestApi(this, 'EventsApi', {
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'],
-        allowHeaders: ['Content-Type', 'Authorization'],
+        allowMethods: apigateway.Cors.ALL_METHODS,
+        allowHeaders: ['Authorization', 'Content-Type'],
       },
     });
-
     const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda);
     const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
-      cognitoUserPools: [userPool],
+      cognitoUserPools: [userPool]
     });
-
-    api.root.addResource('events').addMethod('GET', lambdaIntegration, {
+    const protectedMethodOptions: apigateway.MethodOptions = {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
-    });
+    };
 
+    // GET /events
+    const eventsResource = api.root.addResource('events');
+    eventsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
+    // GET /events/{id}
+    const singleEventResource = eventsResource.addResource('{id}');
+    singleEventResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events
+    eventsResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // Friends routes
     const friendsResource = api.root.addResource('friends');
+    friendsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
     const friendRequestResource = friendsResource.addResource('request');
+    friendRequestResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
     const friendAcceptResource = friendsResource.addResource('accept');
+    friendAcceptResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
+
     const friendByUserResource = friendsResource.addResource('{userId}');
+    friendByUserResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
     const friendSuggestionsResource = friendsResource.addResource('suggestions').addResource('{userId}');
+    friendSuggestionsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
 
-    friendRequestResource.addMethod('POST', lambdaIntegration, {
-      authorizer,
-      authorizationType: apigateway.AuthorizationType.COGNITO,
-    });
-
-    friendAcceptResource.addMethod('PUT', lambdaIntegration, {
-      authorizer,
-      authorizationType: apigateway.AuthorizationType.COGNITO,
-    });
-
-    friendByUserResource.addMethod('GET', lambdaIntegration, {
-      authorizer,
-      authorizationType: apigateway.AuthorizationType.COGNITO,
-    });
-
-    friendSuggestionsResource.addMethod('GET', lambdaIntegration, {
-      authorizer,
-      authorizationType: apigateway.AuthorizationType.COGNITO,
-    });
-
-    // Outputs
-    new cdk.CfnOutput(this, 'UsersTableName', {
-      value: usersTable.tableName,
-    });
-
-    new cdk.CfnOutput(this, 'FriendshipsTableName', {
-      value: friendshipsTable.tableName,
-    });
-
-    new cdk.CfnOutput(this, 'EventsTableName', {
-      value: eventsTable.tableName,
-    });
-
-    new cdk.CfnOutput(this, 'EventMembersTableName', {
-      value: eventMembersTable.tableName,
+    // Output the Table Name for reference
+    new cdk.CfnOutput(this, 'MainTableName', {
+      value: mainTable.tableName,
     });
 
     new cdk.CfnOutput(this, 'UserPoolId', {
-      value: userPool.userPoolId,
+      value: userPool.userPoolId
     });
 
     new cdk.CfnOutput(this, 'UserPoolClientId', {
-      value: userPoolClient.userPoolClientId,
+      value: userPoolClient.userPoolClientId
     });
 
     new cdk.CfnOutput(this, 'ApiUrl', {
-      value: api.url,
+      value: api.url
     });
   }
 }

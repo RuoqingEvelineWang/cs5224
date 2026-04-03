@@ -1,0 +1,1308 @@
+<!DOCTYPE html><html><head>
+      <title>DynamoDB Design</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <link rel="stylesheet" href="file:////Users/lijunxian/.vscode/extensions/shd101wyy.markdown-preview-enhanced-0.8.22/crossnote/dependencies/katex/katex.min.css">
+      
+      
+      
+      
+      
+      <style>
+      code[class*=language-],pre[class*=language-]{color:#333;background:0 0;font-family:Consolas,"Liberation Mono",Menlo,Courier,monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.4;-moz-tab-size:8;-o-tab-size:8;tab-size:8;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}pre[class*=language-]{padding:.8em;overflow:auto;border-radius:3px;background:#f5f5f5}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal;background:#f5f5f5}.token.blockquote,.token.comment{color:#969896}.token.cdata{color:#183691}.token.doctype,.token.macro.property,.token.punctuation,.token.variable{color:#333}.token.builtin,.token.important,.token.keyword,.token.operator,.token.rule{color:#a71d5d}.token.attr-value,.token.regex,.token.string,.token.url{color:#183691}.token.atrule,.token.boolean,.token.code,.token.command,.token.constant,.token.entity,.token.number,.token.property,.token.symbol{color:#0086b3}.token.prolog,.token.selector,.token.tag{color:#63a35c}.token.attr-name,.token.class,.token.class-name,.token.function,.token.id,.token.namespace,.token.pseudo-class,.token.pseudo-element,.token.url-reference .token.variable{color:#795da3}.token.entity{cursor:help}.token.title,.token.title .token.punctuation{font-weight:700;color:#1d3e81}.token.list{color:#ed6a43}.token.inserted{background-color:#eaffea;color:#55a532}.token.deleted{background-color:#ffecec;color:#bd2c00}.token.bold{font-weight:700}.token.italic{font-style:italic}.language-json .token.property{color:#183691}.language-markup .token.tag .token.punctuation{color:#333}.language-css .token.function,code.language-css{color:#0086b3}.language-yaml .token.atrule{color:#63a35c}code.language-yaml{color:#183691}.language-ruby .token.function{color:#333}.language-markdown .token.url{color:#795da3}.language-makefile .token.symbol{color:#795da3}.language-makefile .token.variable{color:#183691}.language-makefile .token.builtin{color:#0086b3}.language-bash .token.keyword{color:#0086b3}pre[data-line]{position:relative;padding:1em 0 1em 3em}pre[data-line] .line-highlight-wrapper{position:absolute;top:0;left:0;background-color:transparent;display:block;width:100%}pre[data-line] .line-highlight{position:absolute;left:0;right:0;padding:inherit 0;margin-top:1em;background:hsla(24,20%,50%,.08);background:linear-gradient(to right,hsla(24,20%,50%,.1) 70%,hsla(24,20%,50%,0));pointer-events:none;line-height:inherit;white-space:pre}pre[data-line] .line-highlight:before,pre[data-line] .line-highlight[data-end]:after{content:attr(data-start);position:absolute;top:.4em;left:.6em;min-width:1em;padding:0 .5em;background-color:hsla(24,20%,50%,.4);color:#f4f1ef;font:bold 65%/1.5 sans-serif;text-align:center;vertical-align:.3em;border-radius:999px;text-shadow:none;box-shadow:0 1px #fff}pre[data-line] .line-highlight[data-end]:after{content:attr(data-end);top:auto;bottom:.4em}html body{font-family:'Helvetica Neue',Helvetica,'Segoe UI',Arial,freesans,sans-serif;font-size:16px;line-height:1.6;color:#333;background-color:#fff;overflow:initial;box-sizing:border-box;word-wrap:break-word}html body>:first-child{margin-top:0}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{line-height:1.2;margin-top:1em;margin-bottom:16px;color:#000}html body h1{font-size:2.25em;font-weight:300;padding-bottom:.3em}html body h2{font-size:1.75em;font-weight:400;padding-bottom:.3em}html body h3{font-size:1.5em;font-weight:500}html body h4{font-size:1.25em;font-weight:600}html body h5{font-size:1.1em;font-weight:600}html body h6{font-size:1em;font-weight:600}html body h1,html body h2,html body h3,html body h4,html body h5{font-weight:600}html body h5{font-size:1em}html body h6{color:#5c5c5c}html body strong{color:#000}html body del{color:#5c5c5c}html body a:not([href]){color:inherit;text-decoration:none}html body a{color:#08c;text-decoration:none}html body a:hover{color:#00a3f5;text-decoration:none}html body img{max-width:100%}html body>p{margin-top:0;margin-bottom:16px;word-wrap:break-word}html body>ol,html body>ul{margin-bottom:16px}html body ol,html body ul{padding-left:2em}html body ol.no-list,html body ul.no-list{padding:0;list-style-type:none}html body ol ol,html body ol ul,html body ul ol,html body ul ul{margin-top:0;margin-bottom:0}html body li{margin-bottom:0}html body li.task-list-item{list-style:none}html body li>p{margin-top:0;margin-bottom:0}html body .task-list-item-checkbox{margin:0 .2em .25em -1.8em;vertical-align:middle}html body .task-list-item-checkbox:hover{cursor:pointer}html body blockquote{margin:16px 0;font-size:inherit;padding:0 15px;color:#5c5c5c;background-color:#f0f0f0;border-left:4px solid #d6d6d6}html body blockquote>:first-child{margin-top:0}html body blockquote>:last-child{margin-bottom:0}html body hr{height:4px;margin:32px 0;background-color:#d6d6d6;border:0 none}html body table{margin:10px 0 15px 0;border-collapse:collapse;border-spacing:0;display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all}html body table th{font-weight:700;color:#000}html body table td,html body table th{border:1px solid #d6d6d6;padding:6px 13px}html body dl{padding:0}html body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:700}html body dl dd{padding:0 16px;margin-bottom:16px}html body code{font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:.85em;color:#000;background-color:#f0f0f0;border-radius:3px;padding:.2em 0}html body code::after,html body code::before{letter-spacing:-.2em;content:'\00a0'}html body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}html body .highlight{margin-bottom:16px}html body .highlight pre,html body pre{padding:1em;overflow:auto;line-height:1.45;border:#d6d6d6;border-radius:3px}html body .highlight pre{margin-bottom:0;word-break:normal}html body pre code,html body pre tt{display:inline;max-width:initial;padding:0;margin:0;overflow:initial;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}html body pre code:after,html body pre code:before,html body pre tt:after,html body pre tt:before{content:normal}html body blockquote,html body dl,html body ol,html body p,html body pre,html body ul{margin-top:0;margin-bottom:16px}html body kbd{color:#000;border:1px solid #d6d6d6;border-bottom:2px solid #c7c7c7;padding:2px 4px;background-color:#f0f0f0;border-radius:3px}@media print{html body{background-color:#fff}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{color:#000;page-break-after:avoid}html body blockquote{color:#5c5c5c}html body pre{page-break-inside:avoid}html body table{display:table}html body img{display:block;max-width:100%;max-height:100%}html body code,html body pre{word-wrap:break-word;white-space:pre}}.markdown-preview{width:100%;height:100%;box-sizing:border-box}.markdown-preview ul{list-style:disc}.markdown-preview ul ul{list-style:circle}.markdown-preview ul ul ul{list-style:square}.markdown-preview ol{list-style:decimal}.markdown-preview ol ol,.markdown-preview ul ol{list-style-type:lower-roman}.markdown-preview ol ol ol,.markdown-preview ol ul ol,.markdown-preview ul ol ol,.markdown-preview ul ul ol{list-style-type:lower-alpha}.markdown-preview .newpage,.markdown-preview .pagebreak{page-break-before:always}.markdown-preview pre.line-numbers{position:relative;padding-left:3.8em;counter-reset:linenumber}.markdown-preview pre.line-numbers>code{position:relative}.markdown-preview pre.line-numbers .line-numbers-rows{position:absolute;pointer-events:none;top:1em;font-size:100%;left:0;width:3em;letter-spacing:-1px;border-right:1px solid #999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}.markdown-preview pre.line-numbers .line-numbers-rows>span{pointer-events:none;display:block;counter-increment:linenumber}.markdown-preview pre.line-numbers .line-numbers-rows>span:before{content:counter(linenumber);color:#999;display:block;padding-right:.8em;text-align:right}.markdown-preview .mathjax-exps .MathJax_Display{text-align:center!important}.markdown-preview:not([data-for=preview]) .code-chunk .code-chunk-btn-group{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .status{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .output-div{margin-bottom:16px}.markdown-preview .md-toc{padding:0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link div,.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}.markdown-preview .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}.scrollbar-style::-webkit-scrollbar{width:8px}.scrollbar-style::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}.scrollbar-style::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode]){position:relative;width:100%;height:100%;top:0;left:0;margin:0;padding:0;overflow:auto}html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{position:relative;top:0;min-height:100vh}@media screen and (min-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em calc(50% - 457px + 2em)}}@media screen and (max-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{font-size:14px!important;padding:1em}}@media print{html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{display:none}}html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{position:fixed;bottom:8px;left:8px;font-size:28px;cursor:pointer;color:inherit;z-index:99;width:32px;text-align:center;opacity:.4}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] #sidebar-toc-btn{opacity:1}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc{position:fixed;top:0;left:0;width:300px;height:100%;padding:32px 0 48px 0;font-size:14px;box-shadow:0 0 4px rgba(150,150,150,.33);box-sizing:border-box;overflow:auto;background-color:inherit}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar{width:8px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc a{text-decoration:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc{padding:0 16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link div,html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{left:300px;width:calc(100% - 300px);padding:2em calc(50% - 457px - 300px / 2);margin:0;box-sizing:border-box}@media screen and (max-width:1274px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{width:100%}}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .markdown-preview{left:50%;transform:translateX(-50%)}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .md-sidebar-toc{display:none}
+/* Please visit the URL below for more information: */
+/*   https://shd101wyy.github.io/markdown-preview-enhanced/#/customize-css */
+
+      </style>
+      <script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function () {
+    // your code here
+  });
+</script>
+    </head>
+    <body for="html-export">
+      <div class="crossnote markdown-preview  ">
+      
+<h1 id="midmeet-dynamodb-单表设计方案">MidMeet DynamoDB 单表设计方案 </h1>
+<blockquote>
+<p>本文档描述 MidMeet 项目从多表方案迁移至 DynamoDB 单表设计的完整方案。<br>
+设计目标：充分利用 DynamoDB 单表特性，覆盖前端所有访问模式，并方便 Lambda 代码实现。</p>
+</blockquote>
+<hr>
+<h2 id="一-设计概述">一、设计概述 </h2>
+<h3 id="11-为什么采用单表设计">1.1 为什么采用单表设计 </h3>
+<p>DynamoDB 的单表设计（Single-Table Design）将多个实体类型存入一张表，通过精心设计的键结构实现原本需要跨表 Join 的查询。其核心优势：</p>
+<ul>
+<li><strong>减少网络往返</strong>：一次 Query 可取回同一 partition 下的多种实体</li>
+<li><strong>降低运维复杂度</strong>：只需管理一张表，CDK 基础设施更简洁</li>
+<li><strong>DynamoDB 原生模式</strong>：按访问模式建模，而非按实体关系建模</li>
+</ul>
+<h3 id="12-原多表方案-vs-单表方案对比">1.2 原多表方案 vs 单表方案对比 </h3>
+<table>
+<thead>
+<tr>
+<th>旧方案（4表）</th>
+<th>新方案（1表）</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>midmeet-{stage}-users</code></td>
+<td><code>midmeet-{stage}-main</code></td>
+</tr>
+<tr>
+<td><code>midmeet-{stage}-friendships</code></td>
+<td>（合并）</td>
+</tr>
+<tr>
+<td><code>midmeet-{stage}-events</code></td>
+<td>（合并）</td>
+</tr>
+<tr>
+<td><code>midmeet-{stage}-event-members</code></td>
+<td>（合并）</td>
+</tr>
+</tbody>
+</table>
+<p>Lambda 环境变量从 4 个表名变为 1 个表名 + GSI 名称。</p>
+<hr>
+<h2 id="二-表结构定义">二、表结构定义 </h2>
+<h3 id="21-主表与索引">2.1 主表与索引 </h3>
+<p><strong>表名：</strong> <code>midmeet-{stage}-main</code></p>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td>String</td>
+<td>分区键（Partition Key）</td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td>String</td>
+<td>排序键（Sort Key）</td>
+</tr>
+<tr>
+<td><code>GSI1PK</code></td>
+<td>String</td>
+<td>GSI1 分区键（用户维度反向查询）</td>
+</tr>
+<tr>
+<td><code>GSI1SK</code></td>
+<td>String</td>
+<td>GSI1 排序键</td>
+</tr>
+<tr>
+<td><code>GSI2PK</code></td>
+<td>String</td>
+<td>GSI2 分区键（Email 查用户）</td>
+</tr>
+<tr>
+<td><code>GSI2SK</code></td>
+<td>String</td>
+<td>GSI2 排序键</td>
+</tr>
+</tbody>
+</table>
+<p><strong>GSI 定义：</strong></p>
+<ul>
+<li><strong>GSI1</strong> (<code>GSI1PK</code> → <code>GSI1SK</code>)：用于「查询某用户参与的所有活动」</li>
+<li><strong>GSI2</strong> (<code>GSI2PK</code> → <code>GSI2SK</code>)：用于「按 email 查找用户」（发送好友请求时使用）</li>
+</ul>
+<p>两个 GSI 均使用 <code>ProjectionType.ALL</code>，投影全部属性。</p>
+<h3 id="22-cdk-stack-代码示例">2.2 CDK Stack 代码示例 </h3>
+<pre data-role="codeBlock" data-info="typescript" class="language-typescript typescript"><code><span class="token keyword keyword-import">import</span> <span class="token operator">*</span> <span class="token keyword keyword-as">as</span> cdk <span class="token keyword keyword-from">from</span> <span class="token string">'aws-cdk-lib'</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-import">import</span> <span class="token operator">*</span> <span class="token keyword keyword-as">as</span> dynamodb <span class="token keyword keyword-from">from</span> <span class="token string">'aws-cdk-lib/aws-dynamodb'</span><span class="token punctuation">;</span>
+
+<span class="token comment">// Single main table replacing 4 separate tables</span>
+<span class="token keyword keyword-const">const</span> mainTable <span class="token operator">=</span> <span class="token keyword keyword-new">new</span> <span class="token class-name">dynamodb</span><span class="token punctuation">.</span><span class="token function">Table</span><span class="token punctuation">(</span><span class="token keyword keyword-this">this</span><span class="token punctuation">,</span> <span class="token string">'MainTable'</span><span class="token punctuation">,</span> <span class="token punctuation">{</span>
+  tableName<span class="token operator">:</span> <span class="token template-string"><span class="token template-punctuation string">`</span><span class="token interpolation"><span class="token interpolation-punctuation punctuation">${</span>prefix<span class="token interpolation-punctuation punctuation">}</span></span><span class="token string">-main</span><span class="token template-punctuation string">`</span></span><span class="token punctuation">,</span>  <span class="token comment">// e.g., midmeet-dev-main</span>
+  partitionKey<span class="token operator">:</span> <span class="token punctuation">{</span> name<span class="token operator">:</span> <span class="token string">'PK'</span><span class="token punctuation">,</span> type<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>AttributeType<span class="token punctuation">.</span><span class="token constant">STRING</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  sortKey<span class="token operator">:</span>      <span class="token punctuation">{</span> name<span class="token operator">:</span> <span class="token string">'SK'</span><span class="token punctuation">,</span> type<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>AttributeType<span class="token punctuation">.</span><span class="token constant">STRING</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  billingMode<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>BillingMode<span class="token punctuation">.</span><span class="token constant">PAY_PER_REQUEST</span><span class="token punctuation">,</span>
+  pointInTimeRecovery<span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+  removalPolicy<span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">// GSI1: reverse lookup — query all events a user is a member of</span>
+mainTable<span class="token punctuation">.</span><span class="token function">addGlobalSecondaryIndex</span><span class="token punctuation">(</span><span class="token punctuation">{</span>
+  indexName<span class="token operator">:</span> <span class="token string">'GSI1'</span><span class="token punctuation">,</span>
+  partitionKey<span class="token operator">:</span> <span class="token punctuation">{</span> name<span class="token operator">:</span> <span class="token string">'GSI1PK'</span><span class="token punctuation">,</span> type<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>AttributeType<span class="token punctuation">.</span><span class="token constant">STRING</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  sortKey<span class="token operator">:</span>      <span class="token punctuation">{</span> name<span class="token operator">:</span> <span class="token string">'GSI1SK'</span><span class="token punctuation">,</span> type<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>AttributeType<span class="token punctuation">.</span><span class="token constant">STRING</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  projectionType<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>ProjectionType<span class="token punctuation">.</span><span class="token constant">ALL</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">// GSI2: email lookup — find a user by email when sending friend requests</span>
+mainTable<span class="token punctuation">.</span><span class="token function">addGlobalSecondaryIndex</span><span class="token punctuation">(</span><span class="token punctuation">{</span>
+  indexName<span class="token operator">:</span> <span class="token string">'GSI2'</span><span class="token punctuation">,</span>
+  partitionKey<span class="token operator">:</span> <span class="token punctuation">{</span> name<span class="token operator">:</span> <span class="token string">'GSI2PK'</span><span class="token punctuation">,</span> type<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>AttributeType<span class="token punctuation">.</span><span class="token constant">STRING</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  sortKey<span class="token operator">:</span>      <span class="token punctuation">{</span> name<span class="token operator">:</span> <span class="token string">'GSI2SK'</span><span class="token punctuation">,</span> type<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>AttributeType<span class="token punctuation">.</span><span class="token constant">STRING</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  projectionType<span class="token operator">:</span> dynamodb<span class="token punctuation">.</span>ProjectionType<span class="token punctuation">.</span><span class="token constant">ALL</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre><p><strong>Lambda 环境变量（新）：</strong></p>
+<pre data-role="codeBlock" data-info="typescript" class="language-typescript typescript"><code>environment<span class="token operator">:</span> <span class="token punctuation">{</span>
+  <span class="token constant">STAGE</span><span class="token operator">:</span> stage<span class="token punctuation">,</span>
+  <span class="token constant">MAIN_TABLE</span><span class="token operator">:</span> mainTable<span class="token punctuation">.</span>tableName<span class="token punctuation">,</span>   <span class="token comment">// e.g., midmeet-dev-main</span>
+  <span class="token constant">MAIN_TABLE_GSI1</span><span class="token operator">:</span> <span class="token string">'GSI1'</span><span class="token punctuation">,</span>           <span class="token comment">// user-centric reverse lookup</span>
+  <span class="token constant">MAIN_TABLE_GSI2</span><span class="token operator">:</span> <span class="token string">'GSI2'</span><span class="token punctuation">,</span>           <span class="token comment">// email lookup</span>
+<span class="token punctuation">}</span><span class="token punctuation">,</span>
+</code></pre><hr>
+<h2 id="三-item-类型详细说明">三、Item 类型详细说明 </h2>
+<p>表中混合存放 4 种 Item 类型，每条记录必须包含 <code>Type</code> 字段以便 Lambda 区分。</p>
+<h3 id="键前缀约定key-prefix-convention">键前缀约定（Key Prefix Convention） </h3>
+<table>
+<thead>
+<tr>
+<th>前缀</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>USER#&lt;userId&gt;</code></td>
+<td>用户相关</td>
+</tr>
+<tr>
+<td><code>EVENT#&lt;eventId&gt;</code></td>
+<td>活动相关</td>
+</tr>
+<tr>
+<td><code>FRIEND#&lt;friendId&gt;</code></td>
+<td>好友关系 SK</td>
+</tr>
+<tr>
+<td><code>EMAIL#&lt;email&gt;</code></td>
+<td>Email GSI 前缀</td>
+</tr>
+<tr>
+<td><code>PROFILE</code></td>
+<td>用户 profile 的 SK</td>
+</tr>
+<tr>
+<td><code>METADATA</code></td>
+<td>活动 metadata 的 SK</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>命名约定：</strong> 前缀统一大写，ID 部分保持原样（Cognito sub 或 UUID）。<br>
+禁止混用风格，例如不能用 <code>User#123</code> 和 <code>USER#123</code> 混存。</p>
+</blockquote>
+<hr>
+<h3 id="31-userprofile用户资料">3.1 UserProfile（用户资料） </h3>
+<p>用于存储用户的个人信息、位置偏好和兴趣标签。</p>
+<p><strong>键设计：</strong></p>
+<table>
+<thead>
+<tr>
+<th>键</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td><code>USER#&lt;userId&gt;</code></td>
+<td>userId = Cognito sub</td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td><code>PROFILE</code></td>
+<td>固定值</td>
+</tr>
+<tr>
+<td><code>GSI2PK</code></td>
+<td><code>EMAIL#&lt;email&gt;</code></td>
+<td>用于 email 反向查询</td>
+</tr>
+<tr>
+<td><code>GSI2SK</code></td>
+<td><code>PROFILE</code></td>
+<td>固定值</td>
+</tr>
+</tbody>
+</table>
+<p><strong>字段列表：</strong></p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>必填</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>USER#&lt;userId&gt;</code></td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>PROFILE</code></td>
+</tr>
+<tr>
+<td><code>Type</code></td>
+<td>String</td>
+<td>是</td>
+<td>固定值 <code>"UserProfile"</code></td>
+</tr>
+<tr>
+<td><code>userId</code></td>
+<td>String</td>
+<td>是</td>
+<td>Cognito sub，冗余存储方便读取</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>是</td>
+<td>显示名称</td>
+</tr>
+<tr>
+<td><code>email</code></td>
+<td>String</td>
+<td>是</td>
+<td>邮箱（GSI2 键）</td>
+</tr>
+<tr>
+<td><code>approxArea</code></td>
+<td>String</td>
+<td>否</td>
+<td>大致区域，如 <code>"Jurong East"</code>（前端 <code>address</code> 字段映射至此）</td>
+</tr>
+<tr>
+<td><code>exactAddress</code></td>
+<td>String</td>
+<td>否</td>
+<td>精确地址（<strong>敏感字段，仅 GET /users/me 返回，GET /users/:userId 不返回</strong>）</td>
+</tr>
+<tr>
+<td><code>transportType</code></td>
+<td>String</td>
+<td>否</td>
+<td>出行方式：<code>WALK</code> / <code>MRT</code> / <code>BUS</code> / <code>CAR</code></td>
+</tr>
+<tr>
+<td><code>interests</code></td>
+<td>List&lt;String&gt;</td>
+<td>否</td>
+<td>兴趣标签扁平数组（前端契约格式），如 <code>["badminton", "japanese food"]</code></td>
+</tr>
+<tr>
+<td><code>preferences</code></td>
+<td>Map</td>
+<td>否</td>
+<td>结构化偏好（可选扩展用）</td>
+</tr>
+<tr>
+<td><code>preferences.sports</code></td>
+<td>List&lt;String&gt;</td>
+<td>否</td>
+<td>运动偏好</td>
+</tr>
+<tr>
+<td><code>preferences.foodTypes</code></td>
+<td>List&lt;String&gt;</td>
+<td>否</td>
+<td>餐饮偏好</td>
+</tr>
+<tr>
+<td><code>preferences.gatheringTypes</code></td>
+<td>List&lt;String&gt;</td>
+<td>否</td>
+<td>聚会类型偏好</td>
+</tr>
+<tr>
+<td><code>preferences.venuePreferences</code></td>
+<td>List&lt;String&gt;</td>
+<td>否</td>
+<td>场地类型偏好</td>
+</tr>
+<tr>
+<td><code>preferences.timePreferences</code></td>
+<td>List&lt;String&gt;</td>
+<td>否</td>
+<td>时间偏好</td>
+</tr>
+<tr>
+<td><code>GSI2PK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>EMAIL#&lt;email&gt;</code></td>
+</tr>
+<tr>
+<td><code>GSI2SK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>PROFILE</code></td>
+</tr>
+<tr>
+<td><code>createdAt</code></td>
+<td>String</td>
+<td>是</td>
+<td>ISO 8601，如 <code>"2026-03-31T10:00:00Z"</code></td>
+</tr>
+<tr>
+<td><code>updatedAt</code></td>
+<td>String</td>
+<td>是</td>
+<td>ISO 8601</td>
+</tr>
+</tbody>
+</table>
+<p><strong>JSON 示例：</strong></p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"PK"</span><span class="token operator">:</span> <span class="token string">"USER#cognito-sub-abc123"</span><span class="token punctuation">,</span>
+  <span class="token property">"SK"</span><span class="token operator">:</span> <span class="token string">"PROFILE"</span><span class="token punctuation">,</span>
+  <span class="token property">"Type"</span><span class="token operator">:</span> <span class="token string">"UserProfile"</span><span class="token punctuation">,</span>
+  <span class="token property">"userId"</span><span class="token operator">:</span> <span class="token string">"cognito-sub-abc123"</span><span class="token punctuation">,</span>
+  <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Alice"</span><span class="token punctuation">,</span>
+  <span class="token property">"email"</span><span class="token operator">:</span> <span class="token string">"alice@example.com"</span><span class="token punctuation">,</span>
+  <span class="token property">"approxArea"</span><span class="token operator">:</span> <span class="token string">"Jurong East"</span><span class="token punctuation">,</span>
+  <span class="token property">"exactAddress"</span><span class="token operator">:</span> <span class="token string">"123 Jurong East Street 21, #04-01, Singapore 600123"</span><span class="token punctuation">,</span>
+  <span class="token property">"transportType"</span><span class="token operator">:</span> <span class="token string">"MRT"</span><span class="token punctuation">,</span>
+  <span class="token property">"interests"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"badminton"</span><span class="token punctuation">,</span> <span class="token string">"japanese food"</span><span class="token punctuation">,</span> <span class="token string">"hiking"</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+  <span class="token property">"preferences"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"sports"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"badminton"</span><span class="token punctuation">,</span> <span class="token string">"running"</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"foodTypes"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"japanese"</span><span class="token punctuation">,</span> <span class="token string">"hotpot"</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"gatheringTypes"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"study"</span><span class="token punctuation">,</span> <span class="token string">"meal"</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"venuePreferences"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"cafe"</span><span class="token punctuation">,</span> <span class="token string">"library"</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+    <span class="token property">"timePreferences"</span><span class="token operator">:</span> <span class="token punctuation">[</span><span class="token string">"weekday_evening"</span><span class="token punctuation">,</span> <span class="token string">"weekend_afternoon"</span><span class="token punctuation">]</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"GSI2PK"</span><span class="token operator">:</span> <span class="token string">"EMAIL#alice@example.com"</span><span class="token punctuation">,</span>
+  <span class="token property">"GSI2SK"</span><span class="token operator">:</span> <span class="token string">"PROFILE"</span><span class="token punctuation">,</span>
+  <span class="token property">"createdAt"</span><span class="token operator">:</span> <span class="token string">"2026-03-31T10:00:00Z"</span><span class="token punctuation">,</span>
+  <span class="token property">"updatedAt"</span><span class="token operator">:</span> <span class="token string">"2026-03-31T10:00:00Z"</span>
+<span class="token punctuation">}</span>
+</code></pre><hr>
+<h3 id="32-friendship好友关系">3.2 Friendship（好友关系） </h3>
+<p>每对好友关系存储<strong>两条对称记录</strong>（A→B 和 B→A），方便双向查询。好友请求状态也通过此结构管理。</p>
+<p><strong>键设计：</strong></p>
+<table>
+<thead>
+<tr>
+<th>键</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td><code>USER#&lt;userId&gt;</code></td>
+<td>关系所属用户</td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td><code>FRIEND#&lt;friendId&gt;</code></td>
+<td>对方用户 ID</td>
+</tr>
+</tbody>
+</table>
+<p><strong>字段列表：</strong></p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>必填</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>USER#&lt;userId&gt;</code></td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>FRIEND#&lt;friendId&gt;</code></td>
+</tr>
+<tr>
+<td><code>Type</code></td>
+<td>String</td>
+<td>是</td>
+<td>固定值 <code>"Friendship"</code></td>
+</tr>
+<tr>
+<td><code>userId</code></td>
+<td>String</td>
+<td>是</td>
+<td>关系所属用户 ID（冗余存储）</td>
+</tr>
+<tr>
+<td><code>friendId</code></td>
+<td>String</td>
+<td>是</td>
+<td>对方用户 ID（冗余存储）</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>PENDING</code> / <code>ACCEPTED</code></td>
+</tr>
+<tr>
+<td><code>requestedBy</code></td>
+<td>String</td>
+<td>是</td>
+<td>发起请求的用户 ID（用于区分谁发送了请求）</td>
+</tr>
+<tr>
+<td><code>createdAt</code></td>
+<td>String</td>
+<td>是</td>
+<td>ISO 8601</td>
+</tr>
+<tr>
+<td><code>updatedAt</code></td>
+<td>String</td>
+<td>是</td>
+<td>ISO 8601</td>
+</tr>
+</tbody>
+</table>
+<p><strong>JSON 示例（A 向 B 发送好友请求时写入两条记录）：</strong></p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token comment">// Record 1: A's perspective (requester)</span>
+<span class="token punctuation">{</span>
+  <span class="token property">"PK"</span><span class="token operator">:</span> <span class="token string">"USER#user-alice"</span><span class="token punctuation">,</span>
+  <span class="token property">"SK"</span><span class="token operator">:</span> <span class="token string">"FRIEND#user-bob"</span><span class="token punctuation">,</span>
+  <span class="token property">"Type"</span><span class="token operator">:</span> <span class="token string">"Friendship"</span><span class="token punctuation">,</span>
+  <span class="token property">"userId"</span><span class="token operator">:</span> <span class="token string">"user-alice"</span><span class="token punctuation">,</span>
+  <span class="token property">"friendId"</span><span class="token operator">:</span> <span class="token string">"user-bob"</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"PENDING"</span><span class="token punctuation">,</span>
+  <span class="token property">"requestedBy"</span><span class="token operator">:</span> <span class="token string">"user-alice"</span><span class="token punctuation">,</span>
+  <span class="token property">"createdAt"</span><span class="token operator">:</span> <span class="token string">"2026-03-31T10:00:00Z"</span><span class="token punctuation">,</span>
+  <span class="token property">"updatedAt"</span><span class="token operator">:</span> <span class="token string">"2026-03-31T10:00:00Z"</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">// Record 2: B's perspective (recipient)</span>
+<span class="token punctuation">{</span>
+  <span class="token property">"PK"</span><span class="token operator">:</span> <span class="token string">"USER#user-bob"</span><span class="token punctuation">,</span>
+  <span class="token property">"SK"</span><span class="token operator">:</span> <span class="token string">"FRIEND#user-alice"</span><span class="token punctuation">,</span>
+  <span class="token property">"Type"</span><span class="token operator">:</span> <span class="token string">"Friendship"</span><span class="token punctuation">,</span>
+  <span class="token property">"userId"</span><span class="token operator">:</span> <span class="token string">"user-bob"</span><span class="token punctuation">,</span>
+  <span class="token property">"friendId"</span><span class="token operator">:</span> <span class="token string">"user-alice"</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"PENDING"</span><span class="token punctuation">,</span>
+  <span class="token property">"requestedBy"</span><span class="token operator">:</span> <span class="token string">"user-alice"</span><span class="token punctuation">,</span>
+  <span class="token property">"createdAt"</span><span class="token operator">:</span> <span class="token string">"2026-03-31T10:00:00Z"</span><span class="token punctuation">,</span>
+  <span class="token property">"updatedAt"</span><span class="token operator">:</span> <span class="token string">"2026-03-31T10:00:00Z"</span>
+<span class="token punctuation">}</span>
+</code></pre><p><strong>好友请求推导逻辑（Lambda）：</strong></p>
+<ul>
+<li><strong>我的好友列表</strong>：Query <code>PK=USER#uid, SK begins_with FRIEND#</code>，过滤 <code>status=ACCEPTED</code></li>
+<li><strong>我收到的请求</strong>：Query <code>PK=USER#uid, SK begins_with FRIEND#</code>，过滤 <code>status=PENDING AND requestedBy ≠ uid</code></li>
+<li><strong>接受请求</strong>：同时 UpdateItem 两条记录 <code>status → ACCEPTED</code></li>
+<li><strong>删除好友</strong>：同时 DeleteItem 两条记录</li>
+</ul>
+<hr>
+<h3 id="33-eventinfo活动信息">3.3 EventInfo（活动信息） </h3>
+<p>存储活动的核心元数据，包括状态、时间范围、最终选定时间和场地。</p>
+<p><strong>键设计：</strong></p>
+<table>
+<thead>
+<tr>
+<th>键</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td><code>EVENT#&lt;eventId&gt;</code></td>
+<td>eventId = UUID</td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td><code>METADATA</code></td>
+<td>固定值</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>EventInfo 不参与 GSI1/GSI2。查询「某用户创建的活动」通过 EventMember（role=CREATOR）实现，无需在 EventInfo 上建额外索引。</p>
+</blockquote>
+<p><strong>字段列表：</strong></p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>必填</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>EVENT#&lt;eventId&gt;</code></td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>METADATA</code></td>
+</tr>
+<tr>
+<td><code>Type</code></td>
+<td>String</td>
+<td>是</td>
+<td>固定值 <code>"EventInfo"</code></td>
+</tr>
+<tr>
+<td><code>eventId</code></td>
+<td>String</td>
+<td>是</td>
+<td>UUID，冗余存储</td>
+</tr>
+<tr>
+<td><code>creatorId</code></td>
+<td>String</td>
+<td>是</td>
+<td>创建者 userId（Cognito sub）</td>
+</tr>
+<tr>
+<td><code>title</code></td>
+<td>String</td>
+<td>是</td>
+<td>活动标题</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td>String</td>
+<td>否</td>
+<td>活动描述</td>
+</tr>
+<tr>
+<td><code>venueType</code></td>
+<td>String</td>
+<td>是</td>
+<td>场地类型：<code>Cafe</code> / <code>Park</code> / <code>Restaurant</code> / <code>Mall</code> / <code>Library</code> / <code>Sports Hall</code></td>
+</tr>
+<tr>
+<td><code>dateRange</code></td>
+<td>Map</td>
+<td>是</td>
+<td><code>{ "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" }</code></td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>String</td>
+<td>是</td>
+<td>见状态机（第五节）</td>
+</tr>
+<tr>
+<td><code>selectedTime</code></td>
+<td>Map</td>
+<td>否</td>
+<td>最终选定时间（status ≥ AWAITING_CONFIRMATION 时填写）：<code>{ "date": "YYYY-MM-DD", "startHour": 14 }</code></td>
+</tr>
+<tr>
+<td><code>selectedVenue</code></td>
+<td>Map</td>
+<td>否</td>
+<td>最终选定场地（status ≥ AWAITING_CONFIRMATION 时填写）</td>
+</tr>
+<tr>
+<td><code>selectedVenue.venueId</code></td>
+<td>String</td>
+<td>—</td>
+<td>场地 ID</td>
+</tr>
+<tr>
+<td><code>selectedVenue.name</code></td>
+<td>String</td>
+<td>—</td>
+<td>场地名称</td>
+</tr>
+<tr>
+<td><code>selectedVenue.address</code></td>
+<td>String</td>
+<td>—</td>
+<td>场地地址</td>
+</tr>
+<tr>
+<td><code>selectedVenue.rating</code></td>
+<td>Number</td>
+<td>—</td>
+<td>评分 0.0–5.0</td>
+</tr>
+<tr>
+<td><code>selectedVenue.distanceKm</code></td>
+<td>Number</td>
+<td>—</td>
+<td>到中点距离（km）</td>
+</tr>
+<tr>
+<td><code>selectedVenue.estimatedMinutes</code></td>
+<td>Number</td>
+<td>—</td>
+<td>预计出行时间（分钟）</td>
+</tr>
+<tr>
+<td><code>createdAt</code></td>
+<td>String</td>
+<td>是</td>
+<td>ISO 8601</td>
+</tr>
+<tr>
+<td><code>updatedAt</code></td>
+<td>String</td>
+<td>是</td>
+<td>ISO 8601</td>
+</tr>
+</tbody>
+</table>
+<p><strong>JSON 示例（活动已定稿）：</strong></p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"PK"</span><span class="token operator">:</span> <span class="token string">"EVENT#evt-uuid-001"</span><span class="token punctuation">,</span>
+  <span class="token property">"SK"</span><span class="token operator">:</span> <span class="token string">"METADATA"</span><span class="token punctuation">,</span>
+  <span class="token property">"Type"</span><span class="token operator">:</span> <span class="token string">"EventInfo"</span><span class="token punctuation">,</span>
+  <span class="token property">"eventId"</span><span class="token operator">:</span> <span class="token string">"evt-uuid-001"</span><span class="token punctuation">,</span>
+  <span class="token property">"creatorId"</span><span class="token operator">:</span> <span class="token string">"user-alice"</span><span class="token punctuation">,</span>
+  <span class="token property">"title"</span><span class="token operator">:</span> <span class="token string">"Badminton at Bishan"</span><span class="token punctuation">,</span>
+  <span class="token property">"description"</span><span class="token operator">:</span> <span class="token string">"Casual game, all skill levels welcome"</span><span class="token punctuation">,</span>
+  <span class="token property">"venueType"</span><span class="token operator">:</span> <span class="token string">"Sports Hall"</span><span class="token punctuation">,</span>
+  <span class="token property">"dateRange"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"start"</span><span class="token operator">:</span> <span class="token string">"2026-04-10"</span><span class="token punctuation">,</span> <span class="token property">"end"</span><span class="token operator">:</span> <span class="token string">"2026-04-20"</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"FINALIZED"</span><span class="token punctuation">,</span>
+  <span class="token property">"selectedTime"</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token property">"date"</span><span class="token operator">:</span> <span class="token string">"2026-04-15"</span><span class="token punctuation">,</span> <span class="token property">"startHour"</span><span class="token operator">:</span> <span class="token number">14</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"selectedVenue"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token property">"venueId"</span><span class="token operator">:</span> <span class="token string">"venue-bishan-cc"</span><span class="token punctuation">,</span>
+    <span class="token property">"name"</span><span class="token operator">:</span> <span class="token string">"Bishan Community Club"</span><span class="token punctuation">,</span>
+    <span class="token property">"address"</span><span class="token operator">:</span> <span class="token string">"51 Bishan Street 13, Singapore 579799"</span><span class="token punctuation">,</span>
+    <span class="token property">"rating"</span><span class="token operator">:</span> <span class="token number">4.2</span><span class="token punctuation">,</span>
+    <span class="token property">"distanceKm"</span><span class="token operator">:</span> <span class="token number">1.8</span><span class="token punctuation">,</span>
+    <span class="token property">"estimatedMinutes"</span><span class="token operator">:</span> <span class="token number">12</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token property">"createdAt"</span><span class="token operator">:</span> <span class="token string">"2026-03-31T10:00:00Z"</span><span class="token punctuation">,</span>
+  <span class="token property">"updatedAt"</span><span class="token operator">:</span> <span class="token string">"2026-04-15T09:00:00Z"</span>
+<span class="token punctuation">}</span>
+</code></pre><hr>
+<h3 id="34-eventmember活动成员">3.4 EventMember（活动成员） </h3>
+<p>记录用户与活动的参与关系，包括角色、邀请状态、可用时间段。</p>
+<p>这是整个单表设计中<strong>最核心的 Item 类型</strong>：</p>
+<ul>
+<li>通过 GSI1 支持「查询用户参与的所有活动」</li>
+<li>通过主表支持「查询活动的所有成员及其状态」</li>
+<li>聚合后推导 <code>slotCounts</code>、<code>confirmedUserIds</code> 等前端所需字段</li>
+</ul>
+<p><strong>键设计：</strong></p>
+<table>
+<thead>
+<tr>
+<th>键</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td><code>EVENT#&lt;eventId&gt;</code></td>
+<td>活动维度</td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td><code>USER#&lt;userId&gt;</code></td>
+<td>成员维度</td>
+</tr>
+<tr>
+<td><code>GSI1PK</code></td>
+<td><code>USER#&lt;userId&gt;</code></td>
+<td>用户维度反向索引</td>
+</tr>
+<tr>
+<td><code>GSI1SK</code></td>
+<td><code>EVENT#&lt;eventId&gt;</code></td>
+<td>支持按活动 ID 查找</td>
+</tr>
+</tbody>
+</table>
+<p><strong>字段列表：</strong></p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>类型</th>
+<th>必填</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>EVENT#&lt;eventId&gt;</code></td>
+</tr>
+<tr>
+<td><code>SK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>USER#&lt;userId&gt;</code></td>
+</tr>
+<tr>
+<td><code>Type</code></td>
+<td>String</td>
+<td>是</td>
+<td>固定值 <code>"EventMember"</code></td>
+</tr>
+<tr>
+<td><code>eventId</code></td>
+<td>String</td>
+<td>是</td>
+<td>冗余存储</td>
+</tr>
+<tr>
+<td><code>userId</code></td>
+<td>String</td>
+<td>是</td>
+<td>冗余存储</td>
+</tr>
+<tr>
+<td><code>role</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>CREATOR</code> / <code>PARTICIPANT</code></td>
+</tr>
+<tr>
+<td><code>inviteStatus</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>PENDING</code> / <code>ACCEPTED</code> / <code>DECLINED</code></td>
+</tr>
+<tr>
+<td><code>hasSubmittedAvailability</code></td>
+<td>Boolean</td>
+<td>是</td>
+<td>是否已提交可用时间（初始值 <code>false</code>）</td>
+</tr>
+<tr>
+<td><code>availableTimeSlots</code></td>
+<td>List&lt;String&gt;</td>
+<td>否</td>
+<td>可用时间段列表，格式 <code>"YYYY-MM-DD-HH"</code>，如 <code>["2026-04-15-14", "2026-04-15-15"]</code></td>
+</tr>
+<tr>
+<td><code>GSI1PK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>USER#&lt;userId&gt;</code></td>
+</tr>
+<tr>
+<td><code>GSI1SK</code></td>
+<td>String</td>
+<td>是</td>
+<td><code>EVENT#&lt;eventId&gt;</code></td>
+</tr>
+<tr>
+<td><code>createdAt</code></td>
+<td>String</td>
+<td>是</td>
+<td>ISO 8601</td>
+</tr>
+<tr>
+<td><code>updatedAt</code></td>
+<td>String</td>
+<td>是</td>
+<td>ISO 8601</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>时间格式说明：</strong> <code>availableTimeSlots</code> 使用 <code>"YYYY-MM-DD-HH"</code> 格式（隐含 SGT/UTC+8），与前端格式保持一致，避免时区转换复杂度。</p>
+</blockquote>
+<p><strong>JSON 示例（成员已提交可用时间）：</strong></p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"PK"</span><span class="token operator">:</span> <span class="token string">"EVENT#evt-uuid-001"</span><span class="token punctuation">,</span>
+  <span class="token property">"SK"</span><span class="token operator">:</span> <span class="token string">"USER#user-bob"</span><span class="token punctuation">,</span>
+  <span class="token property">"Type"</span><span class="token operator">:</span> <span class="token string">"EventMember"</span><span class="token punctuation">,</span>
+  <span class="token property">"eventId"</span><span class="token operator">:</span> <span class="token string">"evt-uuid-001"</span><span class="token punctuation">,</span>
+  <span class="token property">"userId"</span><span class="token operator">:</span> <span class="token string">"user-bob"</span><span class="token punctuation">,</span>
+  <span class="token property">"role"</span><span class="token operator">:</span> <span class="token string">"PARTICIPANT"</span><span class="token punctuation">,</span>
+  <span class="token property">"inviteStatus"</span><span class="token operator">:</span> <span class="token string">"ACCEPTED"</span><span class="token punctuation">,</span>
+  <span class="token property">"hasSubmittedAvailability"</span><span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>
+  <span class="token property">"availableTimeSlots"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+    <span class="token string">"2026-04-15-14"</span><span class="token punctuation">,</span>
+    <span class="token string">"2026-04-15-15"</span><span class="token punctuation">,</span>
+    <span class="token string">"2026-04-16-10"</span>
+  <span class="token punctuation">]</span><span class="token punctuation">,</span>
+  <span class="token property">"GSI1PK"</span><span class="token operator">:</span> <span class="token string">"USER#user-bob"</span><span class="token punctuation">,</span>
+  <span class="token property">"GSI1SK"</span><span class="token operator">:</span> <span class="token string">"EVENT#evt-uuid-001"</span><span class="token punctuation">,</span>
+  <span class="token property">"createdAt"</span><span class="token operator">:</span> <span class="token string">"2026-03-31T10:00:00Z"</span><span class="token punctuation">,</span>
+  <span class="token property">"updatedAt"</span><span class="token operator">:</span> <span class="token string">"2026-04-10T08:30:00Z"</span>
+<span class="token punctuation">}</span>
+</code></pre><hr>
+<h2 id="四-完整访问模式access-patterns">四、完整访问模式（Access Patterns） </h2>
+<p>以下列出所有前端 API 对应的 DynamoDB 访问模式：</p>
+<h3 id="41-用户相关">4.1 用户相关 </h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>API 端点</th>
+<th>DynamoDB 操作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>GET /users/me</code></td>
+<td><code>GetItem(PK=USER#uid, SK=PROFILE)</code></td>
+<td>返回完整 profile 包含 exactAddress</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>PUT /users/me</code></td>
+<td><code>PutItem / UpdateItem(PK=USER#uid, SK=PROFILE)</code></td>
+<td>首次写入设 createdAt，后续只更新 updatedAt</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>GET /users/:userId</code></td>
+<td><code>GetItem(PK=USER#uid, SK=PROFILE)</code></td>
+<td><strong>不返回 exactAddress</strong></td>
+</tr>
+<tr>
+<td>4</td>
+<td>按 email 查用户（内部）</td>
+<td><code>Query(GSI2, GSI2PK=EMAIL#email, GSI2SK=PROFILE)</code></td>
+<td>用于 <code>POST /friends/request</code> 内部步骤</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42-好友相关">4.2 好友相关 </h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>API 端点</th>
+<th>DynamoDB 操作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5</td>
+<td><code>GET /friends</code></td>
+<td><code>Query(PK=USER#uid, SK begins_with FRIEND#)</code> + filter <code>status=ACCEPTED</code>，再 <code>BatchGetItem</code> 获取 profile</td>
+<td>获取好友完整 profile</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>GET /friends/requests</code></td>
+<td><code>Query(PK=USER#uid, SK begins_with FRIEND#)</code> + filter <code>status=PENDING AND requestedBy ≠ uid</code>，再 <code>BatchGetItem</code> 获取 profile</td>
+<td>获取待处理的好友请求</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>POST /friends/request</code></td>
+<td>先 Query GSI2 找目标用户；再写入两条 Friendship 记录（<code>PutItem</code> × 2）</td>
+<td>如已存在则返回 409</td>
+</tr>
+<tr>
+<td>8</td>
+<td><code>POST /friends/accept</code></td>
+<td><code>UpdateItem(PK=USER#uid, SK=FRIEND#fid, status=ACCEPTED)</code> × 2（双向更新）</td>
+<td>同时更新双方记录</td>
+</tr>
+<tr>
+<td>9</td>
+<td><code>DELETE /friends/:friendId</code></td>
+<td><code>DeleteItem(PK=USER#uid, SK=FRIEND#fid)</code> × 2（双向删除）</td>
+<td>同时删除双方记录</td>
+</tr>
+</tbody>
+</table>
+<h3 id="43-活动相关">4.3 活动相关 </h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>API 端点</th>
+<th>DynamoDB 操作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>10</td>
+<td><code>POST /events</code></td>
+<td><code>PutItem</code> EventInfo + <code>PutItem</code> EventMember（creator） + <code>PutItem</code> × N（participants）</td>
+<td>一次创建活动及所有成员记录</td>
+</tr>
+<tr>
+<td>11</td>
+<td><code>GET /events</code></td>
+<td><code>Query(GSI1, GSI1PK=USER#uid)</code> 得到所有 EventMember → <code>BatchGetItem</code> EventInfo</td>
+<td>再聚合成员数据构造 EventDetail</td>
+</tr>
+<tr>
+<td>12</td>
+<td><code>GET /events/:eventId</code></td>
+<td><code>GetItem(PK=EVENT#eid, SK=METADATA)</code> + <code>Query(PK=EVENT#eid, SK begins_with USER#)</code></td>
+<td>后者获取全部成员及其状态，Lambda 聚合计算 slotCounts 等字段</td>
+</tr>
+<tr>
+<td>13</td>
+<td><code>DELETE /events/:eventId</code></td>
+<td>验证 <code>creatorId === uid</code>；<code>DeleteItem</code> EventInfo + <code>Query</code> 所有 EventMember → <code>BatchWriteItem</code> 删除</td>
+<td>仅 creator 可删除</td>
+</tr>
+</tbody>
+</table>
+<h3 id="44-可用时间提交与状态流转">4.4 可用时间提交与状态流转 </h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>API 端点</th>
+<th>DynamoDB 操作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>14</td>
+<td><code>POST /events/:eventId/availability</code></td>
+<td><code>UpdateItem(PK=EVENT#eid, SK=USER#uid, availableTimeSlots=..., hasSubmittedAvailability=true)</code></td>
+<td>更新后检查所有成员是否已提交；若是则 <code>UpdateItem(PK=EVENT#eid, SK=METADATA, status=SELECTING_VENUE)</code></td>
+</tr>
+<tr>
+<td>15</td>
+<td><code>POST /events/:eventId/finalize</code></td>
+<td>验证 creator；<code>UpdateItem(PK=EVENT#eid, SK=METADATA, selectedTime=..., selectedVenue=..., status=AWAITING_CONFIRMATION)</code></td>
+<td>同时将所有非 creator 的 EventMember.inviteStatus 重置为 PENDING</td>
+</tr>
+<tr>
+<td>16</td>
+<td><code>POST /events/:eventId/confirm</code></td>
+<td><code>UpdateItem(PK=EVENT#eid, SK=USER#uid, inviteStatus=ACCEPTED)</code></td>
+<td>更新后 Query 所有成员检查是否全部响应；若是则自动流转至 FINALIZED</td>
+</tr>
+<tr>
+<td>17</td>
+<td><code>POST /events/:eventId/decline</code></td>
+<td><code>UpdateItem(PK=EVENT#eid, SK=USER#uid, inviteStatus=DECLINED)</code></td>
+<td>同上，全部响应后流转至 FINALIZED</td>
+</tr>
+<tr>
+<td>18</td>
+<td><code>POST /events/:eventId/unfinalize</code></td>
+<td>验证 creator；<code>UpdateItem</code> EventInfo（清除 selectedTime/selectedVenue，status→SELECTING_VENUE）+ <code>UpdateItem</code> × N 重置所有成员 inviteStatus→PENDING</td>
+<td>撤回定稿</td>
+</tr>
+</tbody>
+</table>
+<h3 id="45-场地-dashboard-与通知">4.5 场地、Dashboard 与通知 </h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>API 端点</th>
+<th>DynamoDB 操作</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>19</td>
+<td><code>GET /events/:eventId/venues</code></td>
+<td><code>Query(PK=EVENT#eid, SK begins_with USER#)</code> 获取所有成员 + <code>BatchGetItem</code> UserProfile 取 approxArea/transportType</td>
+<td>Lambda 计算地理中心，返回静态/外部 API 场地列表</td>
+</tr>
+<tr>
+<td>20</td>
+<td><code>GET /dashboard</code></td>
+<td><code>Query(GSI1, GSI1PK=USER#uid)</code> → <code>BatchGetItem</code> EventInfo</td>
+<td>Lambda 过滤：upcomingEvents（活跃活动取前3）+ pendingInvites（inviteStatus=PENDING 且 status=COLLECTING_AVAILABILITY）</td>
+</tr>
+<tr>
+<td>21</td>
+<td><code>GET /notifications</code></td>
+<td><code>Query(GSI1, GSI1PK=USER#uid)</code> → <code>BatchGetItem</code> EventInfo + <code>Query(PK=USER#uid, SK begins_with FRIEND#)</code> filter PENDING</td>
+<td>Lambda 推导通知（见下文），无独立 Notification 表</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="五-活动状态机">五、活动状态机 </h2>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>                    创建活动
+                       │
+                       ▼
+          COLLECTING_AVAILABILITY
+           （收集所有参与者的可用时间）
+                       │
+          所有参与者均提交后自动流转
+                       │
+                       ▼
+            SELECTING_VENUE
+         （创建者选择最终时间和场地）
+                       │
+              创建者调用 finalize
+                       │
+                       ▼
+          AWAITING_CONFIRMATION
+           （等待所有参与者确认/拒绝）
+                       │
+          所有参与者均响应后自动流转
+                       │
+                       ▼
+               FINALIZED
+              （活动已最终确定）
+</code></pre><p><strong>状态说明：</strong></p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>触发条件</th>
+<th>数据变化</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>COLLECTING_AVAILABILITY</code></td>
+<td>创建活动时初始状态</td>
+<td>所有 EventMember.inviteStatus = PENDING</td>
+</tr>
+<tr>
+<td><code>SELECTING_VENUE</code></td>
+<td>所有 EventMember.hasSubmittedAvailability = true</td>
+<td>Lambda 检测后自动更新 EventInfo.status</td>
+</tr>
+<tr>
+<td><code>AWAITING_CONFIRMATION</code></td>
+<td>Creator 调用 finalize API</td>
+<td>EventInfo 写入 selectedTime + selectedVenue</td>
+</tr>
+<tr>
+<td><code>FINALIZED</code></td>
+<td>所有参与者均响应（confirm/decline）</td>
+<td>最终状态，不可再修改（除非 unfinalize）</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="六-通知推导逻辑notifications">六、通知推导逻辑（Notifications） </h2>
+<p><strong>通知不存储为独立 Item</strong>，由 Lambda 在 <code>GET /notifications</code> 时实时推导：</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>GET /notifications 的推导步骤：
+
+1. Query GSI1 (GSI1PK=USER#uid) → 获取用户所有 EventMember 记录
+2. BatchGetItem 获取对应 EventInfo
+3. 遍历每个 (EventMember, EventInfo) 对：
+
+   a. 若 EventInfo.status = SELECTING_VENUE AND EventMember.role = CREATOR
+      → 推导 ALL_SUBMITTED 通知（所有人都提交了，创建者该选场地了）
+
+   b. 若 EventInfo.status = AWAITING_CONFIRMATION
+      AND EventMember.role = PARTICIPANT
+      AND EventMember.inviteStatus = PENDING
+      → 推导 ATTENDANCE_REQUEST 通知（需要确认/拒绝出席）
+
+4. Query 主表 (PK=USER#uid, SK begins_with FRIEND#)
+   过滤 status=PENDING AND requestedBy ≠ uid
+   → 推导 FRIEND_REQUEST 通知
+</code></pre><hr>
+<h2 id="七-lambda-代码模式参考">七、Lambda 代码模式参考 </h2>
+<h3 id="71-获取用户参与的所有活动get-events">7.1 获取用户参与的所有活动（GET /events） </h3>
+<pre data-role="codeBlock" data-info="javascript" class="language-javascript javascript"><code><span class="token comment">// Step 1: get all EventMember items for this user via GSI1</span>
+<span class="token keyword keyword-const">const</span> memberResult <span class="token operator">=</span> <span class="token keyword control-flow keyword-await">await</span> docClient<span class="token punctuation">.</span><span class="token method function property-access">query</span><span class="token punctuation">(</span><span class="token punctuation">{</span>
+  <span class="token literal-property property">TableName</span><span class="token operator">:</span> process<span class="token punctuation">.</span><span class="token property-access">env</span><span class="token punctuation">.</span><span class="token constant">MAIN_TABLE</span><span class="token punctuation">,</span>
+  <span class="token literal-property property">IndexName</span><span class="token operator">:</span> process<span class="token punctuation">.</span><span class="token property-access">env</span><span class="token punctuation">.</span><span class="token constant">MAIN_TABLE_GSI1</span><span class="token punctuation">,</span>   <span class="token comment">// 'GSI1'</span>
+  <span class="token literal-property property">KeyConditionExpression</span><span class="token operator">:</span> <span class="token string">'GSI1PK = :userKey'</span><span class="token punctuation">,</span>
+  <span class="token literal-property property">ExpressionAttributeValues</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token string-property property">':userKey'</span><span class="token operator">:</span> <span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">USER#</span><span class="token interpolation"><span class="token interpolation-punctuation punctuation">${</span>userId<span class="token interpolation-punctuation punctuation">}</span></span><span class="token template-punctuation string">`</span></span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token method function property-access">promise</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">// Step 2: extract unique eventIds</span>
+<span class="token keyword keyword-const">const</span> eventIds <span class="token operator">=</span> memberResult<span class="token punctuation">.</span><span class="token property-access"><span class="token maybe-class-name">Items</span></span><span class="token punctuation">.</span><span class="token method function property-access">map</span><span class="token punctuation">(</span><span class="token parameter">item</span> <span class="token arrow operator">=&gt;</span> item<span class="token punctuation">.</span><span class="token property-access">eventId</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+<span class="token comment">// Step 3: batch get EventInfo for all events</span>
+<span class="token keyword keyword-const">const</span> eventKeys <span class="token operator">=</span> eventIds<span class="token punctuation">.</span><span class="token method function property-access">map</span><span class="token punctuation">(</span><span class="token parameter">id</span> <span class="token arrow operator">=&gt;</span> <span class="token punctuation">(</span><span class="token punctuation">{</span>
+  <span class="token constant">PK</span><span class="token operator">:</span> <span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">EVENT#</span><span class="token interpolation"><span class="token interpolation-punctuation punctuation">${</span>id<span class="token interpolation-punctuation punctuation">}</span></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">,</span>
+  <span class="token constant">SK</span><span class="token operator">:</span> <span class="token string">'METADATA'</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword keyword-const">const</span> eventsResult <span class="token operator">=</span> <span class="token keyword control-flow keyword-await">await</span> docClient<span class="token punctuation">.</span><span class="token method function property-access">batchGet</span><span class="token punctuation">(</span><span class="token punctuation">{</span>
+  <span class="token literal-property property">RequestItems</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token punctuation">[</span>process<span class="token punctuation">.</span><span class="token property-access">env</span><span class="token punctuation">.</span><span class="token constant">MAIN_TABLE</span><span class="token punctuation">]</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token literal-property property">Keys</span><span class="token operator">:</span> eventKeys <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token method function property-access">promise</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre><h3 id="72-查询活动所有成员内部工具函数">7.2 查询活动所有成员（内部工具函数） </h3>
+<pre data-role="codeBlock" data-info="javascript" class="language-javascript javascript"><code><span class="token comment">// Returns all EventMember items for a given event</span>
+<span class="token keyword keyword-async">async</span> <span class="token keyword keyword-function">function</span> <span class="token function">getEventMembers</span><span class="token punctuation">(</span><span class="token parameter">eventId</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token keyword keyword-const">const</span> result <span class="token operator">=</span> <span class="token keyword control-flow keyword-await">await</span> docClient<span class="token punctuation">.</span><span class="token method function property-access">query</span><span class="token punctuation">(</span><span class="token punctuation">{</span>
+    <span class="token literal-property property">TableName</span><span class="token operator">:</span> process<span class="token punctuation">.</span><span class="token property-access">env</span><span class="token punctuation">.</span><span class="token constant">MAIN_TABLE</span><span class="token punctuation">,</span>
+    <span class="token literal-property property">KeyConditionExpression</span><span class="token operator">:</span> <span class="token string">'PK = :pk AND begins_with(SK, :skPrefix)'</span><span class="token punctuation">,</span>
+    <span class="token literal-property property">ExpressionAttributeValues</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token string-property property">':pk'</span><span class="token operator">:</span> <span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">EVENT#</span><span class="token interpolation"><span class="token interpolation-punctuation punctuation">${</span>eventId<span class="token interpolation-punctuation punctuation">}</span></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">,</span>
+      <span class="token string-property property">':skPrefix'</span><span class="token operator">:</span> <span class="token string">'USER#'</span><span class="token punctuation">,</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+  <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token method function property-access">promise</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword control-flow keyword-return">return</span> result<span class="token punctuation">.</span><span class="token property-access"><span class="token maybe-class-name">Items</span></span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><h3 id="73-计算-slotcounts前端所需聚合字段">7.3 计算 slotCounts（前端所需聚合字段） </h3>
+<pre data-role="codeBlock" data-info="javascript" class="language-javascript javascript"><code><span class="token comment">// Aggregates availableTimeSlots from all members into a count map</span>
+<span class="token comment">// Returns: Record&lt;"YYYY-MM-DD-HH", number&gt;</span>
+<span class="token keyword keyword-function">function</span> <span class="token function">computeSlotCounts</span><span class="token punctuation">(</span><span class="token parameter">members</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token keyword keyword-const">const</span> counts <span class="token operator">=</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">;</span>
+  <span class="token keyword control-flow keyword-for">for</span> <span class="token punctuation">(</span><span class="token keyword keyword-const">const</span> member <span class="token keyword keyword-of">of</span> members<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token keyword control-flow keyword-for">for</span> <span class="token punctuation">(</span><span class="token keyword keyword-const">const</span> slot <span class="token keyword keyword-of">of</span> <span class="token punctuation">(</span>member<span class="token punctuation">.</span><span class="token property-access">availableTimeSlots</span> <span class="token operator">||</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+      counts<span class="token punctuation">[</span>slot<span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token punctuation">(</span>counts<span class="token punctuation">[</span>slot<span class="token punctuation">]</span> <span class="token operator">||</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span>
+  <span class="token keyword control-flow keyword-return">return</span> counts<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><h3 id="74-检查并触发状态流转">7.4 检查并触发状态流转 </h3>
+<pre data-role="codeBlock" data-info="javascript" class="language-javascript javascript"><code><span class="token comment">// Called after a member submits availability</span>
+<span class="token comment">// Auto-transitions event to SELECTING_VENUE when all members have submitted</span>
+<span class="token keyword keyword-async">async</span> <span class="token keyword keyword-function">function</span> <span class="token function">checkAndAdvanceToSelectingVenue</span><span class="token punctuation">(</span><span class="token parameter">eventId</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token keyword keyword-const">const</span> members <span class="token operator">=</span> <span class="token keyword control-flow keyword-await">await</span> <span class="token function">getEventMembers</span><span class="token punctuation">(</span>eventId<span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword keyword-const">const</span> allSubmitted <span class="token operator">=</span> members<span class="token punctuation">.</span><span class="token method function property-access">every</span><span class="token punctuation">(</span><span class="token parameter">m</span> <span class="token arrow operator">=&gt;</span> m<span class="token punctuation">.</span><span class="token property-access">hasSubmittedAvailability</span> <span class="token operator">===</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword control-flow keyword-if">if</span> <span class="token punctuation">(</span>allSubmitted<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token keyword control-flow keyword-await">await</span> docClient<span class="token punctuation">.</span><span class="token method function property-access">update</span><span class="token punctuation">(</span><span class="token punctuation">{</span>
+      <span class="token literal-property property">TableName</span><span class="token operator">:</span> process<span class="token punctuation">.</span><span class="token property-access">env</span><span class="token punctuation">.</span><span class="token constant">MAIN_TABLE</span><span class="token punctuation">,</span>
+      <span class="token literal-property property">Key</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token constant">PK</span><span class="token operator">:</span> <span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">EVENT#</span><span class="token interpolation"><span class="token interpolation-punctuation punctuation">${</span>eventId<span class="token interpolation-punctuation punctuation">}</span></span><span class="token template-punctuation string">`</span></span><span class="token punctuation">,</span> <span class="token constant">SK</span><span class="token operator">:</span> <span class="token string">'METADATA'</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token literal-property property">UpdateExpression</span><span class="token operator">:</span> <span class="token string">'SET #s = :status, updatedAt = :now'</span><span class="token punctuation">,</span>
+      <span class="token literal-property property">ExpressionAttributeNames</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token string-property property">'#s'</span><span class="token operator">:</span> <span class="token string">'status'</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token literal-property property">ExpressionAttributeValues</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+        <span class="token string-property property">':status'</span><span class="token operator">:</span> <span class="token string">'SELECTING_VENUE'</span><span class="token punctuation">,</span>
+        <span class="token string-property property">':now'</span><span class="token operator">:</span> <span class="token keyword keyword-new">new</span> <span class="token class-name">Date</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token method function property-access">toISOString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token method function property-access">promise</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre><hr>
+<h2 id="八-注意事项与约定">八、注意事项与约定 </h2>
+<h3 id="81-安全规则">8.1 安全规则 </h3>
+<ul>
+<li><code>exactAddress</code> 是敏感字段，<strong>只能在 <code>GET /users/me</code> 中返回</strong>，<code>GET /users/:userId</code> 必须过滤掉</li>
+<li>删除活动前必须验证 <code>EventInfo.creatorId === 请求方 userId</code></li>
+<li>finalize / unfinalize 操作也需要验证 creator 身份</li>
+</ul>
+<h3 id="82-一致性规则">8.2 一致性规则 </h3>
+<ul>
+<li>好友关系必须<strong>同时写入/删除双向记录</strong>，避免数据不一致</li>
+<li>使用 <code>TransactWriteItems</code>（DynamoDB 事务）可确保双向写入的原子性（课程项目中可选用）</li>
+</ul>
+<h3 id="83-字段命名约定">8.3 字段命名约定 </h3>
+<table>
+<thead>
+<tr>
+<th>规则</th>
+<th>例子</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Key 前缀全大写</td>
+<td><code>USER#</code>, <code>EVENT#</code>, <code>FRIEND#</code></td>
+</tr>
+<tr>
+<td>字段名用 camelCase</td>
+<td><code>createdAt</code>, <code>inviteStatus</code>, <code>venueType</code></td>
+</tr>
+<tr>
+<td>状态值全大写下划线</td>
+<td><code>COLLECTING_AVAILABILITY</code>, <code>AWAITING_CONFIRMATION</code></td>
+</tr>
+<tr>
+<td>角色值全大写</td>
+<td><code>CREATOR</code>, <code>PARTICIPANT</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="84-与前端的字段映射">8.4 与前端的字段映射 </h3>
+<table>
+<thead>
+<tr>
+<th>前端字段</th>
+<th>DynamoDB 字段</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>User.address</code></td>
+<td><code>UserProfile.approxArea</code></td>
+<td>前端传 address，后端存 approxArea</td>
+</tr>
+<tr>
+<td><code>EventDetail.slotCounts</code></td>
+<td>不落库</td>
+<td>Lambda 聚合 availableTimeSlots 实时计算</td>
+</tr>
+<tr>
+<td><code>EventDetail.availabilitySubmittedBy</code></td>
+<td>不落库</td>
+<td>过滤 hasSubmittedAvailability=true 的成员</td>
+</tr>
+<tr>
+<td><code>EventDetail.confirmedUserIds</code></td>
+<td>不落库</td>
+<td>过滤 inviteStatus=ACCEPTED 的成员</td>
+</tr>
+<tr>
+<td><code>EventDetail.declinedUserIds</code></td>
+<td>不落库</td>
+<td>过滤 inviteStatus=DECLINED 的成员</td>
+</tr>
+<tr>
+<td><code>EventDetail.pendingUserIds</code></td>
+<td>不落库</td>
+<td>过滤 inviteStatus=PENDING 的成员</td>
+</tr>
+<tr>
+<td><code>EventDetail.participants</code></td>
+<td>不落库</td>
+<td>聚合 EventMember + <a href="http://UserProfile.name">UserProfile.name</a></td>
+</tr>
+</tbody>
+</table>
+<h3 id="85-cdk-变更总结">8.5 CDK 变更总结 </h3>
+<p>从多表迁移到单表，CDK stack 的变化：</p>
+<pre data-role="codeBlock" data-info="diff" class="language-diff diff"><code><span class="token deleted-sign deleted"><span class="token prefix deleted">-</span><span class="token line"> usersTable
+</span><span class="token prefix deleted">-</span><span class="token line"> friendshipsTable
+</span><span class="token prefix deleted">-</span><span class="token line"> eventsTable
+</span><span class="token prefix deleted">-</span><span class="token line"> eventMembersTable
+</span></span><span class="token inserted-sign inserted"><span class="token prefix inserted">+</span><span class="token line"> mainTable (with GSI1 + GSI2)
+</span></span>
+Lambda environment variables:
+<span class="token deleted-sign deleted"><span class="token prefix deleted">-</span><span class="token line"> USERS_TABLE
+</span><span class="token prefix deleted">-</span><span class="token line"> FRIENDSHIPS_TABLE
+</span><span class="token prefix deleted">-</span><span class="token line"> EVENTS_TABLE
+</span><span class="token prefix deleted">-</span><span class="token line"> EVENT_MEMBERS_TABLE
+</span></span><span class="token inserted-sign inserted"><span class="token prefix inserted">+</span><span class="token line"> MAIN_TABLE
+</span><span class="token prefix inserted">+</span><span class="token line"> MAIN_TABLE_GSI1
+</span><span class="token prefix inserted">+</span><span class="token line"> MAIN_TABLE_GSI2
+</span></span></code></pre>
+      </div>
+      
+      
+    
+    
+    
+    
+    
+    
+  
+    </body></html>

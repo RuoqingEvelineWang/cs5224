@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import {
-  fetchMyEvents,
-  fetchPendingInvitations,
-  fetchPendingEvents,
-  joinEvent,
   STATUS_LABELS,
   STATUS_COLORS,
 } from '../api/Event.tsx';
@@ -109,12 +106,12 @@ function EventCard({
           )}
         </div>
         <p className="text-xs text-stone-500 mt-0.5">
-          {event.venueType} · {event.dateRange.start}
-          {event.dateRange.start !== event.dateRange.end ? ` – ${event.dateRange.end}` : ''}
+          {event.venueType} · {event.dateRange?.start}
+          {event.dateRange?.start !== event.dateRange?.end ? ` – ${event.dateRange?.end}` : ''}
           {event.selectedVenue && <span className="ml-1 text-stone-400">· {event.selectedVenue.distanceKm.toFixed(1)} km</span>}
         </p>
         <p className="text-xs text-stone-400 mt-0.5">
-          {event.participants.map(p => p.name).join(', ')}
+          {event.participants?.map(p => p.name || p.userId).join(', ')}
         </p>
       </div>
       <div className="shrink-0">{action}</div>
@@ -151,21 +148,94 @@ export default function EventList() {
   const [sort, setSort] = useState<SortKey>('time');
 
   useEffect(() => {
-    Promise.all([fetchMyEvents(), fetchPendingInvitations(), fetchPendingEvents()]).then(
-      ([mine, invites, rejoin]) => {
+    async function fetchAllData() {
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        const userId = session.tokens?.idToken?.payload?.sub as string;
+        const apiUrl = import.meta.env.VITE_API_URL;
+
+        console.log("Debug - Token exists:", !!token);
+        console.log("Debug - API URL is:", apiUrl);
+        console.log("Debug - User ID is:", userId);
+
+        if (!token || !apiUrl) {
+          throw new Error('Missing Auth token or API URL');
+        }
+
+        // Fetch all events for this user from the single API endpoint
+        const response = await fetch(`${apiUrl}/events`, {
+          method: 'GET',
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.statusText}`);
+        }
+
+        const { data } = await response.json();
+        const allEvents = data as EventDetail[];
+
+        // Bucket the events based on the user's status within them
+        const mine: EventDetail[] = [];
+        const invites: EventDetail[] = [];
+        const rejoin: EventDetail[] = [];
+
+        allEvents.forEach((event) => {
+          const hasDeclined = event.declinedUserIds?.includes(userId);
+          const hasSubmitted = event.availabilitySubmittedBy?.includes(userId);
+          const isCreator = event.creatorId === userId;
+
+          if (hasDeclined) {
+            rejoin.push(event);
+          } else if (event.status === 'COLLECTING_AVAILABILITY' && !hasSubmitted && !isCreator) {
+            invites.push(event);
+          } else {
+            mine.push(event);
+          }
+        });
+
         setMyEvents(mine);
         setPendingInvites(invites);
         setPendingRejoin(rejoin);
+
+      } catch (error) {
+        console.error('Failed to load events:', error);
+      } finally {
         setLoading(false);
       }
-    );
+    }
+
+    fetchAllData();
   }, []);
 
   async function handleRejoin(eventId: string) {
     setJoiningId(eventId);
-    await joinEvent(eventId);
-    setJoiningId(null);
-    navigate(`/events/${eventId}/workspace`);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+
+      // Call the confirm endpoint to rejoin
+      const response = await fetch(`${apiUrl}/events/${eventId}/confirm`, {
+        method: 'POST',
+        headers: {
+          'Authorization': token || '',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to rejoin event');
+      
+      setJoiningId(null);
+      navigate(`/events/${eventId}/workspace`);
+    } catch (error) {
+      console.error('Error rejoining event:', error);
+      setJoiningId(null);
+    }
   }
 
   // Separate active events by group
@@ -227,7 +297,7 @@ export default function EventList() {
               <ul className="space-y-3">
                 {filteredInvites.map(event => {
                   const submitted = event.availabilitySubmittedBy ?? [];
-                  const total = event.participants.length;
+                  const total = event.participants?.length || 0;
                   return (
                     <li key={event.eventId}>
                       <EventCard
@@ -247,7 +317,7 @@ export default function EventList() {
                         }
                       />
                       <p className="text-xs text-stone-400 mt-1 ml-1">
-                        {submitted.length}/{total} submitted · invited by {event.creatorName}
+                        {submitted.length}/{total} submitted · invited by {event.creatorName || 'Creator'}
                       </p>
                     </li>
                   );
@@ -287,7 +357,7 @@ export default function EventList() {
               <ul className="space-y-3">
                 {awaitingEvents.map(event => {
                   const confirmed = event.confirmedUserIds ?? [];
-                  const total = event.participants.length;
+                  const total = event.participants?.length || 0;
                   return (
                     <li key={event.eventId}>
                       <EventCard

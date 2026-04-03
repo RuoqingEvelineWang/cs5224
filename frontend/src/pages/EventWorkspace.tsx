@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { fetchAuthSession } from "aws-amplify/auth";
 import {
-  fetchEventById,
   fetchVenues,
   submitAvailability,
   finalizeEvent,
   leaveEvent,
   getDatesInRange,
-  CURRENT_USER_ID,
 } from "../api/Event.tsx";
 import type { EventDetail, Venue, TimeSlot } from "../api/Event.tsx";
 
@@ -44,7 +43,7 @@ function StatusBadge({ status }: { status: EventDetail["status"] }) {
     AWAITING_CONFIRMATION:   { label: "Awaiting Confirmation",   cls: "bg-violet-100 text-violet-700" },
     FINALIZED:               { label: "Confirmed",               cls: "bg-green-100 text-green-700" },
   };
-  const { label, cls } = map[status];
+  const { label, cls } = map[status] || { label: "Unknown", cls: "bg-gray-100 text-gray-700" };
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}`}>
       {label}
@@ -53,6 +52,7 @@ function StatusBadge({ status }: { status: EventDetail["status"] }) {
 }
 
 function StarRating({ rating }: { rating: number }) {
+  if (rating == null) return null;
   const full = Math.round(rating);
   return (
     <span className="text-sm font-medium text-gray-700 flex items-center gap-1">
@@ -199,7 +199,7 @@ function VenueCard({ venue, canSelect, onSelect }: { venue: Venue; canSelect: bo
       </div>
       <div className="flex items-center gap-4 text-sm text-gray-600">
         <StarRating rating={venue.rating} />
-        <span>🗺 {venue.distanceKm.toFixed(1)} km</span>
+        <span>🗺 {venue.distanceKm?.toFixed(1)} km</span>
         <span>⏱ ~{venue.estimatedMinutes} min</span>
       </div>
       {canSelect && (
@@ -228,6 +228,8 @@ export default function EventWorkspace() {
   const [venues, setVenues] = useState<Venue[]>([]);
   const [loadingEvent, setLoadingEvent] = useState(true);
   const [loadingVenues, setLoadingVenues] = useState(false);
+  
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Availability selection (own slots only)
   const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
@@ -238,21 +240,45 @@ export default function EventWorkspace() {
   const [selectedFinalSlotKey, setSelectedFinalSlotKey] = useState<string | null>(null);
 
   const [finalizing, setFinalizing] = useState(false);
-  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
   const isDragging = useRef(false);
   const dragMode = useRef<"add" | "remove">("add");
 
+  // Fetch real event data
   useEffect(() => {
-    if (!eventId) return;
-    fetchEventById(eventId).then(detail => {
-      setEvent(detail);
-      setLoadingEvent(false);
-      // Auto-switch tab based on status
-      if (detail.status === 'SELECTING_VENUE') setActiveTab("availability");
-    });
+    async function loadWorkspaceData() {
+      if (!eventId) return;
+      try {
+        const session = await fetchAuthSession();
+        const token = session.tokens?.idToken?.toString();
+        const userId = session.tokens?.idToken?.payload?.sub as string;
+        setCurrentUserId(userId);
+
+        const apiUrl = import.meta.env.VITE_API_URL;
+        if (!token || !apiUrl) throw new Error("Missing Auth token or API URL");
+
+        const response = await fetch(`${apiUrl}/events/${eventId}`, {
+          headers: {
+            'Authorization': token,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) throw new Error("Event not found");
+
+        const { data } = await response.json();
+        setEvent(data);
+        
+        if (data.status === 'SELECTING_VENUE') setActiveTab("availability");
+      } catch (error) {
+        console.error("Error loading workspace:", error);
+      } finally {
+        setLoadingEvent(false);
+      }
+    }
+    loadWorkspaceData();
   }, [eventId]);
 
   useEffect(() => {
@@ -289,20 +315,27 @@ export default function EventWorkspace() {
   }, []);
 
   async function handleSubmitAvailability() {
-    if (!eventId) return;
+    if (!eventId || !currentUserId) return;
     setSubmitting(true);
     const slots: TimeSlot[] = Array.from(selectedSlots).map(key => {
       const lastDash = key.lastIndexOf("-");
       return { date: key.slice(0, lastDash), startHour: parseInt(key.slice(lastDash + 1)) };
     });
-    await submitAvailability(eventId, CURRENT_USER_ID, slots);
-    const refreshed = await fetchEventById(eventId);
+    
+    await submitAvailability(eventId, currentUserId, slots);
+    
+    // Re-fetch to get updated slot counts
+    const session = await fetchAuthSession();
+    const token = session.tokens?.idToken?.toString();
+    const apiUrl = import.meta.env.VITE_API_URL;
+    const response = await fetch(`${apiUrl}/events/${eventId}`, {
+      headers: { 'Authorization': token || '' }
+    });
+    const { data: refreshed } = await response.json();
+    
     setEvent(refreshed);
     setSubmitting(false);
     setSubmitted(true);
-    if (refreshed.status === 'SELECTING_VENUE') {
-      // All submitted — stay on availability tab to see "submitted" banner
-    }
   }
 
   async function handleSelectVenue(venue: Venue) {
@@ -315,7 +348,15 @@ export default function EventWorkspace() {
     setFinalizing(true);
     try {
       await finalizeEvent(eventId, slot, venue.venueId);
-      const finalEvent = await fetchEventById(eventId);
+      
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const response = await fetch(`${apiUrl}/events/${eventId}`, {
+        headers: { 'Authorization': token || '' }
+      });
+      const { data: finalEvent } = await response.json();
+      
       navigate(`/events/${eventId}/details`, {
         state: { event: finalEvent, selectedSlot: slot, selectedVenue: venue },
       });
@@ -323,18 +364,6 @@ export default function EventWorkspace() {
       console.error("Failed to finalize event:", err);
     } finally {
       setFinalizing(false);
-    }
-  }
-
-  function handleExitRequest() {
-    if (event && event.creatorId !== CURRENT_USER_ID) {
-      setShowLeaveConfirm(true);
-      return;
-    }
-    if (selectedSlots.size > 0 && !submitted) {
-      setShowExitConfirm(true);
-    } else {
-      navigate("/events");
     }
   }
 
@@ -361,22 +390,20 @@ export default function EventWorkspace() {
     );
   }
 
-  if (!event) {
+  if (!event || !currentUserId) {
     return <div className="text-center py-16 text-gray-500">Event not found.</div>;
   }
 
-  // Redirect FINALIZED events to details page
   if (event.status === 'FINALIZED') {
     navigate(`/events/${eventId}/details`, { replace: true });
     return null;
   }
 
-  const dates = getDatesInRange(event.dateRange.start, event.dateRange.end);
-  const totalParticipants = event.participants.length;
-  const isCreator = event.creatorId === CURRENT_USER_ID;
-  const alreadySubmitted = (event.availabilitySubmittedBy ?? []).includes(CURRENT_USER_ID);
+  const dates = getDatesInRange(event.dateRange?.start || "", event.dateRange?.end || "");
+  const totalParticipants = event.participants?.length || 0;
+  const isCreator = event.creatorId === currentUserId;
+  const alreadySubmitted = (event.availabilitySubmittedBy ?? []).includes(currentUserId);
 
-  // Venue tab unlocks for creator once they've picked a final slot
   const venueUnlocked = isCreator && event.status === 'SELECTING_VENUE' && selectedFinalSlotKey !== null;
 
   return (
@@ -404,28 +431,6 @@ export default function EventWorkspace() {
         </div>
       )}
 
-      {/* ── Exit Without Submitting Dialog ── */}
-      {showExitConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4 space-y-4">
-            <h3 className="text-base font-semibold text-gray-900">Exit without submitting?</h3>
-            <p className="text-sm text-gray-500">
-              You have {selectedSlots.size} slot{selectedSlots.size !== 1 ? "s" : ""} selected that haven't been submitted. They will be lost.
-            </p>
-            <div className="flex gap-3 pt-1">
-              <button onClick={() => { setShowExitConfirm(false); navigate("/events"); }}
-                className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors">
-                Exit Anyway
-              </button>
-              <button onClick={() => setShowExitConfirm(false)}
-                className="flex-1 py-2 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition-colors">
-                Stay
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
@@ -435,12 +440,12 @@ export default function EventWorkspace() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900">{event.title}</h1>
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            {event.participants.map(p => (
+            {event.participants?.map(p => (
               <span key={p.userId} className="inline-flex items-center gap-1 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
                 <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-semibold text-[10px]">
-                  {p.name[0]}
+                  {p.name?.[0] || '?'}
                 </span>
-                {p.name}
+                {p.name || 'Unknown'}
                 {(event.availabilitySubmittedBy ?? []).includes(p.userId) && (
                   <span className="text-green-500 text-[10px]">✓</span>
                 )}
@@ -449,14 +454,16 @@ export default function EventWorkspace() {
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
-          <button onClick={handleExitRequest}
+          <button onClick={() => navigate("/events")}
             className="text-sm px-4 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
             ← Back to Events
           </button>
-          <button onClick={handleExitRequest}
-            className="text-sm px-4 py-2 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
-            Exit
-          </button>
+          {!isCreator && (
+            <button onClick={() => setShowLeaveConfirm(true)}
+              className="text-sm px-4 py-2 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 transition-colors">
+              Leave Event
+            </button>
+          )}
         </div>
       </div>
 
@@ -472,7 +479,7 @@ export default function EventWorkspace() {
             </p>
           )}
           <div className="flex flex-wrap gap-2 mt-1">
-            {event.participants.map(p => {
+            {event.participants?.map(p => {
               const confirmed = (event.confirmedUserIds ?? []).includes(p.userId);
               const declined = (event.declinedUserIds ?? []).includes(p.userId);
               return (
@@ -616,7 +623,7 @@ export default function EventWorkspace() {
         <div className="flex flex-col items-center py-12 gap-3 text-center">
           <div className="text-4xl">⏳</div>
           <p className="text-gray-700 font-medium">All participants have submitted their availability.</p>
-          <p className="text-gray-500 text-sm">The organizer ({event.creatorName}) is selecting the final time and venue.</p>
+          <p className="text-gray-500 text-sm">The organizer ({event.creatorName || 'Creator'}) is selecting the final time and venue.</p>
         </div>
       )}
 
