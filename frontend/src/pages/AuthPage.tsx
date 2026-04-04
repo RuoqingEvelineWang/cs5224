@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { signIn, signUp, confirmSignUp, signOut } from "aws-amplify/auth";
+import { signIn, signUp, confirmSignUp, signOut, autoSignIn } from "aws-amplify/auth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -298,7 +298,7 @@ function SignUpForm({
         // Pass the email into the username parameter
         username: fields.email,
         password: fields.password,
-        options: { userAttributes: { email: fields.email } },
+        options: { userAttributes: { email: fields.email }, autoSignIn: true },
       });
       onSuccess(fields.email);
     } catch (e: unknown) {
@@ -354,6 +354,8 @@ function ConfirmForm({
     setLoading(true);
     try {
       await confirmSignUp({ username: email, confirmationCode: code.trim() });
+      await signOut().catch(() => {});
+      await autoSignIn();
       onSuccess();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Verification failed. Please try again.");
@@ -413,7 +415,7 @@ export default function AuthPage({ onAuthenticated }: { onAuthenticated: () => v
   }
 
   function handleConfirmSuccess() {
-    setMode("signIn");
+    onAuthenticated();
   }
 
   return (
@@ -446,6 +448,7 @@ export default function AuthPage({ onAuthenticated }: { onAuthenticated: () => v
           {mode === "confirm" && (
             <ConfirmForm email={pendingEmail} onSuccess={handleConfirmSuccess} />
           )}
+
         </div>
       </div>
     </div>
