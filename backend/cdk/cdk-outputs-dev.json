@@ -1,9 +1,0 @@
-{
-  "CdkStack": {
-    "UserPoolClientId": "154cd92heip3cecrn7geace7vq",
-    "UserPoolId": "ap-southeast-1_TKgYET6o1",
-    "ApiUrl": "https://9zfdr46vj4.execute-api.ap-southeast-1.amazonaws.com/prod/",
-    "EventsApiEndpoint08310F1D": "https://9zfdr46vj4.execute-api.ap-southeast-1.amazonaws.com/prod/",
-    "MainTableName": "midmeet-dev-main"
-  }
-}
