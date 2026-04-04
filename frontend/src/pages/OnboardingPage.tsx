@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { updateUser } from '../api/User';
+import { useRef, useState } from 'react';
+import { lookupPostalCode, updateUser } from '../api/User';
 
 const TRANSPORT_OPTIONS = ['Walking', 'Cycling', 'Public Transport', 'Car'];
 
@@ -26,11 +26,39 @@ export default function OnboardingPage({
   onComplete: () => void;
 }) {
   const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
+  const [postalCode, setPostalCode] = useState('');
+  const [resolvedAddress, setResolvedAddress] = useState('');
+  const [lookingUp, setLookingUp] = useState(false);
   const [transportType, setTransportType] = useState('');
   const [interests, setInterests] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const lookupRef = useRef(0);
+
+  async function handlePostalCodeChange(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 6);
+    setPostalCode(digits);
+    if (digits.length < 6) {
+      setResolvedAddress('');
+      return;
+    }
+    const id = ++lookupRef.current;
+    setLookingUp(true);
+    try {
+      const result = await lookupPostalCode(digits);
+      if (id === lookupRef.current) {
+        setResolvedAddress(result.address);
+        setError('');
+      }
+    } catch {
+      if (id === lookupRef.current) {
+        setResolvedAddress('');
+        setError('No address found for this postal code.');
+      }
+    } finally {
+      if (id === lookupRef.current) setLookingUp(false);
+    }
+  }
 
   function toggleInterest(interest: string) {
     setInterests((prev) => (prev.includes(interest) ? prev.filter((i) => i !== interest) : [...prev, interest]));
@@ -42,6 +70,10 @@ export default function OnboardingPage({
       setError('Name is required.');
       return;
     }
+    if (postalCode.length !== 6) {
+      setError('Please enter a valid 6-digit Singapore postal code.');
+      return;
+    }
     if (!transportType) {
       setError('Please select a transport type.');
       return;
@@ -49,15 +81,17 @@ export default function OnboardingPage({
     setLoading(true);
     setError('');
     try {
-      await updateUser(userId, {
+      const updated = await updateUser(userId, {
         name: name.trim(),
-        address: address.trim(),
+        postalCode,
         transportType,
         interests,
       });
+      setResolvedAddress(updated.address);
       onComplete();
-    } catch {
-      setError('Something went wrong. Please try again.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong.';
+      setError(msg.includes('No address found') ? 'Invalid postal code. Please check and try again.' : msg);
     } finally {
       setLoading(false);
     }
@@ -104,14 +138,25 @@ export default function OnboardingPage({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Home Address</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Postal Code <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="e.g. Bishan, Singapore"
+              inputMode="numeric"
+              value={postalCode}
+              onChange={(e) => handlePostalCodeChange(e.target.value)}
+              placeholder="e.g. 530111"
+              maxLength={6}
               className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
             />
+            <p className="mt-1 text-xs text-gray-400">Your 6-digit Singapore postal code for finding meeting points.</p>
+            {lookingUp && (
+              <p className="mt-1.5 text-xs text-gray-400">Looking up address...</p>
+            )}
+            {!lookingUp && resolvedAddress && (
+              <p className="mt-1.5 text-xs text-emerald-600 font-medium">{resolvedAddress}</p>
+            )}
           </div>
 
           <div>

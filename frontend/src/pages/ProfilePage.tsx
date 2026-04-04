@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { fetchUserAttributes } from "aws-amplify/auth";
-import { fetchCurrentUser, updateUser } from "../api/User";
+import { fetchCurrentUser, lookupPostalCode, updateUser } from "../api/User";
 import type { User } from "../api/User";
 import {
   acceptFriendRequest,
@@ -27,21 +27,49 @@ function ProfileTab({
 }) {
   const [profile, setProfile] = useState<User | null>(null);
   const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [resolvedAddress, setResolvedAddress] = useState("");
   const [transportType, setTransportType] = useState("");
   const [interests, setInterests] = useState<string[]>([]);
+  const [lookingUp, setLookingUp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copiedUserId, setCopiedUserId] = useState(false);
   const [error, setError] = useState("");
+  const lookupRef = useRef(0);
 
   useEffect(() => {
     fetchCurrentUser(userId).then(p => {
-      if (p) { setProfile(p); setName(p.name); setAddress(p.address); setTransportType(p.transportType); setInterests(p.interests); }
+      if (p) { setProfile(p); setName(p.name); setPostalCode(p.postalCode || ""); setResolvedAddress(p.address || ""); setTransportType(p.transportType); setInterests(p.interests); }
       setLoading(false);
     });
   }, [userId]);
+
+  async function handlePostalCodeChange(value: string) {
+    const digits = value.replace(/\D/g, "").slice(0, 6);
+    setPostalCode(digits);
+    if (digits.length < 6) {
+      setResolvedAddress("");
+      return;
+    }
+    const id = ++lookupRef.current;
+    setLookingUp(true);
+    try {
+      const result = await lookupPostalCode(digits);
+      if (id === lookupRef.current) {
+        setResolvedAddress(result.address);
+        setError("");
+      }
+    } catch {
+      if (id === lookupRef.current) {
+        setResolvedAddress("");
+        setError("No address found for this postal code.");
+      }
+    } finally {
+      if (id === lookupRef.current) setLookingUp(false);
+    }
+  }
 
   function toggleInterest(interest: string) {
     setInterests(prev => prev.includes(interest) ? prev.filter(i => i !== interest) : [...prev, interest]);
@@ -50,13 +78,17 @@ function ProfileTab({
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) { setError("Name is required."); return; }
+    if (postalCode && postalCode.length !== 6) { setError("Please enter a valid 6-digit postal code."); return; }
     if (!transportType) { setError("Please select a transport type."); return; }
     setSaving(true); setError(""); setSaved(false);
     try {
-      const updated = await updateUser(userId, { name: name.trim(), address: address.trim(), transportType, interests });
-      setProfile(updated); onNameChange(updated.name); setSaved(true);
+      const updated = await updateUser(userId, { name: name.trim(), postalCode, transportType, interests });
+      setProfile(updated); setResolvedAddress(updated.address); onNameChange(updated.name); setSaved(true);
       setTimeout(() => setSaved(false), 2500);
-    } catch { setError("Something went wrong. Please try again."); }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong.";
+      setError(msg.includes("No address found") ? "Invalid postal code. Please check and try again." : msg);
+    }
     finally { setSaving(false); }
   }
 
@@ -116,9 +148,16 @@ function ProfileTab({
       <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5">
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Travel</h2>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">Home Address</label>
-          <input type="text" value={address} onChange={e => setAddress(e.target.value)} placeholder="e.g. Bishan, Singapore"
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Postal Code</label>
+          <input type="text" inputMode="numeric" value={postalCode} onChange={e => handlePostalCodeChange(e.target.value)} placeholder="e.g. 530111" maxLength={6}
             className="w-full px-3.5 py-2.5 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
+          <p className="mt-1 text-xs text-gray-400">Your 6-digit Singapore postal code.</p>
+          {lookingUp && (
+            <p className="mt-1.5 text-xs text-gray-400">Looking up address...</p>
+          )}
+          {!lookingUp && resolvedAddress && (
+            <p className="mt-1.5 text-xs text-emerald-600 font-medium">{resolvedAddress}</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1.5">Transport Type <span className="text-red-500">*</span></label>
