@@ -7,6 +7,7 @@ frontend/build/
 # CDK output
 backend/cdk/cdk.out/
 backend/cdk/cdk.context.json
+backend/cdk/cdk-outputs-*.json
 
 # Environment variables
 **/.env
