@@ -16,3 +16,6 @@ backend/cdk/cdk.context.json
 *.log
 .vscode/
 .claude/
+
+# Local docs/plans (not for GitHub)
+doc/

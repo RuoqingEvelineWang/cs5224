@@ -88,7 +88,6 @@ export class CdkStack extends cdk.Stack {
 
     mainTable.grantReadWriteData(apiLambda);
 
-    // API Gateway
     // API Gateway setup
     const api = new apigateway.RestApi(this, 'EventsApi', {
       defaultCorsPreflightOptions: {
@@ -97,26 +96,50 @@ export class CdkStack extends cdk.Stack {
         allowHeaders: ['Authorization', 'Content-Type'],
       },
     });
-
     const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda);
     const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
       cognitoUserPools: [userPool]
     });
+    const protectedMethodOptions: apigateway.MethodOptions = {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    };
 
     // GET /events
     const eventsResource = api.root.addResource('events');
-    eventsResource.addMethod('GET', lambdaIntegration, { authorizer });
+    eventsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
 
     // GET /events/{id}
     const singleEventResource = eventsResource.addResource('{id}');
-    singleEventResource.addMethod('GET', lambdaIntegration, { authorizer });
+    singleEventResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
 
     // POST /events
-    eventsResource.addMethod('POST', lambdaIntegration, { authorizer });
+    eventsResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
 
-    // GET /friends
+    // Users routes
+    const usersResource = api.root.addResource('users');
+    const usersMeResource = usersResource.addResource('me');
+    usersMeResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+    usersMeResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
+
+    // Friends routes
     const friendsResource = api.root.addResource('friends');
-    friendsResource.addMethod('GET', lambdaIntegration, { authorizer });
+    friendsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
+    const friendRequestResource = friendsResource.addResource('request');
+    friendRequestResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    const friendAcceptResource = friendsResource.addResource('accept');
+    friendAcceptResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
+
+    const friendDeclineResource = friendsResource.addResource('decline');
+    friendDeclineResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
+
+    const friendByUserResource = friendsResource.addResource('{userId}');
+    friendByUserResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
+    const friendSuggestionsResource = friendsResource.addResource('suggestions').addResource('{userId}');
+    friendSuggestionsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
 
     // Output the Table Name for reference
     new cdk.CfnOutput(this, 'MainTableName', {

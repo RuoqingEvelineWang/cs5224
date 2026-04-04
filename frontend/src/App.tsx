@@ -13,6 +13,7 @@ import EventDetails from './pages/EventDetails.tsx';
 import NotificationsPage from './pages/NotificationsPage.tsx';
 import OnboardingPage from './pages/OnboardingPage.tsx';
 import ProfilePage from './pages/ProfilePage.tsx';
+import FriendsManagementPage from './pages/FriendsManagementPage.tsx';
 import { fetchCurrentUser, createUser } from './api/User.tsx';
 import { countActionableNotifications } from './api/eventService';
 
@@ -98,6 +99,7 @@ function AppContent({
 
             <nav className="flex items-center gap-5">
               <NavLink to="/">Dashboard</NavLink>
+              <NavLink to="/friends">Friends</NavLink>
               <NavLink to="/events">Events</NavLink>
               <NavLink to="/events/new">New Event</NavLink>
             </nav>
@@ -142,6 +144,7 @@ function AppContent({
         <main className="max-w-6xl mx-auto px-6 py-6">
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/friends" element={<FriendsManagementPage />} />
             <Route path="/events" element={<EventList />} />
             <Route path="/events/new" element={<EventCreationWizard />} />
             <Route path="/create" element={<CreateEvent />} />

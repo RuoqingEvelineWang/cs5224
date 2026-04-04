@@ -789,7 +789,7 @@ This section provides the complete REST API contract the frontend expects. All e
 Every authenticated request must include the Cognito ID Token:
 
 ```
-Authorization: Bearer <Cognito ID Token>
+Authorization: <Cognito ID Token>
 ```
 
 The backend Lambda should validate the JWT and extract `sub` as the canonical `userId`. The frontend currently uses the hardcoded constant `CURRENT_USER_ID = 'u-current'`. When integrating, replace this with `getCurrentUser().userId` from Amplify and pass it into all API call functions.
