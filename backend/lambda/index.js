@@ -4,7 +4,7 @@ import { getEvents } from "./handlers/getEvents.js";
 import { getEventById } from "./handlers/getEventById.js";
 import { getFriends } from "./handlers/getFriends.js";
 import { createEvent } from "./handlers/createEvent.js";
-import { getMyProfile, upsertMyProfile } from "./handlers/userHandlers.js";
+import { getMyProfile, upsertMyProfile, geocodePostalCode } from "./handlers/userHandlers.js";
 import {
   sendFriendRequest,
   acceptFriendRequest,
@@ -54,6 +54,15 @@ export const handler = async (event) => {
       const body = parseJsonBody(event);
       const claims = getAuthClaims(event);
       const data = await upsertMyProfile(userId, body, claims, docClient);
+      return respond(200, data);
+    }
+
+    if (method === "GET" && (resource === "/geocode/{postalCode}" || /^\/geocode\/[^/]+$/.test(path))) {
+      const postalCode = event?.pathParameters?.postalCode || path.split("/").pop();
+      if (!postalCode || !/^\d{6}$/.test(postalCode)) {
+        throw new HttpError(400, "Please provide a valid 6-digit postal code.");
+      }
+      const data = await geocodePostalCode(postalCode);
       return respond(200, data);
     }
 

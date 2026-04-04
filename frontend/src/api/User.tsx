@@ -8,7 +8,10 @@ export type User = {
   userId: string;
   name: string;
   email: string;
+  postalCode: string;
   address: string;
+  lat: number | null;
+  lng: number | null;
   transportType: string;
   interests: string[];
 };
@@ -124,7 +127,7 @@ export async function createUser(userId: string, name: string, email: string): P
       userId,
       name: String(name || "").trim(),
       email: String(email || "").trim(),
-      address: "",
+      postalCode: "",
       transportType: "",
       interests: [],
     }),
@@ -145,16 +148,27 @@ export async function fetchCurrentUser(userId: string): Promise<User | null> {
   }
 }
 
+export type GeocodedAddress = {
+  address: string;
+  postalCode: string;
+  lat: number;
+  lng: number;
+};
+
+export async function lookupPostalCode(postalCode: string): Promise<GeocodedAddress> {
+  return request<GeocodedAddress>(`/geocode/${postalCode}`, { method: "GET" });
+}
+
 export async function updateUser(
   userId: string,
-  data: Pick<User, 'name' | 'address' | 'transportType' | 'interests'>
+  data: Pick<User, 'name' | 'postalCode' | 'transportType' | 'interests'>
 ): Promise<User> {
   return request<User>("/users/me", {
     method: "PUT",
     body: JSON.stringify({
       userId,
       name: String(data.name || "").trim(),
-      address: String(data.address || "").trim(),
+      postalCode: String(data.postalCode || "").trim(),
       transportType: String(data.transportType || "").trim(),
       interests: Array.isArray(data.interests) ? data.interests : [],
     }),

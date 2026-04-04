@@ -116,6 +116,11 @@ export class CdkStack extends cdk.Stack {
     // POST /events
     eventsResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
 
+    // Geocode route
+    const geocodeResource = api.root.addResource('geocode');
+    const geocodeByPostalResource = geocodeResource.addResource('{postalCode}');
+    geocodeByPostalResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
     // Users routes
     const usersResource = api.root.addResource('users');
     const usersMeResource = usersResource.addResource('me');
