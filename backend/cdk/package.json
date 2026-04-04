@@ -13,7 +13,8 @@
     "watch": "tsc -w",
     "test": "jest",
     "cdk": "cdk",
-    "seed": "MAIN_TABLE=midmeet-dev-main ts-node scripts/seed.ts"
+    "seed": "MAIN_TABLE=midmeet-dev-main ts-node scripts/seed.ts",
+    "db:clear": "MAIN_TABLE=midmeet-dev-main ts-node scripts/clear.ts"
   },
   "devDependencies": {
     "@types/jest": "^30",
