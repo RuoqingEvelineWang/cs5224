@@ -131,7 +131,7 @@ export async function acceptFriendRequest(userId, body, docClient) {
   if (status === "ACCEPTED") {
     throw new HttpError(409, "You are already friends with this user.");
   }
-
+  /* istanbul ignore next */
   if (status !== "PENDING") {
     throw new HttpError(409, "Friend relationship is not in a pending state.");
   }

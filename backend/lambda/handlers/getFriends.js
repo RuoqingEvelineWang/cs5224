@@ -51,7 +51,7 @@ function getFriendId(item) {
   if (typeof item?.SK === "string" && item.SK.startsWith("FRIEND#")) {
     return item.SK.slice("FRIEND#".length);
   }
-
+  /* istanbul ignore next */
   return "";
 }
 

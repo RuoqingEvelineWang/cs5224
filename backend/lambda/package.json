@@ -7,5 +7,37 @@
     "@aws-sdk/client-dynamodb": "^3.x.x",
     "@aws-sdk/lib-dynamodb": "^3.x.x",
     "dotenv": "^16.x.x"
+  },
+  "scripts": {
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "setupFiles": [
+      "<rootDir>/jest.setup.js"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/jest.setup.afterFramework.js"
+    ],
+    "transform": {
+      "^.+\\.js$": "babel-jest"
+    },
+    "collectCoverageFrom": [
+      "handlers/**/*.js",
+      "!handlers/**/*.test.js",
+      "!handlers/testGetRecommendations.js"
+    ],
+    "coverageReporters": [
+      "text",
+      "lcov"
+    ]
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "babel-jest": "^29.7.0",
+    "jest": "^29.7.0"
   }
 }
