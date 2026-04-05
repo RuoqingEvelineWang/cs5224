@@ -20,6 +20,18 @@ function formatScore(score: number): string {
   return `${Math.round(score * 100)}%`;
 }
 
+function getSuggestionReason(suggestion: FriendSuggestion): string {
+  const commonCount = suggestion.commonInterests.length;
+  if (commonCount === 0) {
+    return `Similarity score: ${formatScore(suggestion.score)} based on your profile interests.`;
+  }
+
+  const preview = suggestion.commonInterests.slice(0, 3).join(", ");
+  const suffix = commonCount > 3 ? ", etc." : "";
+  const interestLabel = commonCount === 1 ? "interest" : "interests";
+  return `You share ${commonCount} ${interestLabel}: ${preview}${suffix}.`;
+}
+
 function resolveRequesterName(
   userId: string,
   profileName?: string,
@@ -49,6 +61,7 @@ export default function FriendsManagementPage() {
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const displayedSuggestions = suggestions.slice(0, 5);
 
   const loadData = useCallback(async (targetUserId: string, showLoader: boolean) => {
     if (showLoader) setLoading(true);
@@ -338,11 +351,11 @@ export default function FriendsManagementPage() {
         <h2 className="text-lg font-semibold text-gray-900">Suggested Friends</h2>
         <p className="mt-1 text-sm text-gray-500">Recommendations are ranked by Jaccard similarity of interests.</p>
 
-        {suggestions.length === 0 ? (
+        {displayedSuggestions.length === 0 ? (
           <p className="mt-4 text-sm text-gray-500">No suggestions available yet. Add more interests to improve matches.</p>
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {suggestions.map((suggestion) => (
+            {displayedSuggestions.map((suggestion) => (
               <article key={`suggestion-${suggestion.userId}`} className="rounded-xl border border-gray-200 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -353,6 +366,7 @@ export default function FriendsManagementPage() {
                     {formatScore(suggestion.score)}
                   </span>
                 </div>
+                <p className="mt-2 text-xs text-gray-600">{getSuggestionReason(suggestion)}</p>
 
                 {suggestion.commonInterests.length > 0 && (
                   <div className="mt-3">

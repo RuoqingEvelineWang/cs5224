@@ -8,6 +8,7 @@ import {
 
 const TABLE_NAME = process.env.MAIN_TABLE;
 const PROFILE_SK = "PROFILE";
+const MAX_SUGGESTIONS = 5;
 
 class HttpError extends Error {
   constructor(statusCode, message) {
@@ -370,7 +371,7 @@ export async function listFriendSuggestions(userId, docClient) {
 
   return {
     userId,
-    suggestions,
+    suggestions: suggestions.slice(0, MAX_SUGGESTIONS),
   };
 }
 

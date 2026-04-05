@@ -303,3 +303,59 @@ test("listFriendSuggestions returns empty list when current user profile is miss
   assert.equal(calls.length, 1);
   assert.equal(commandName(calls[0]), "GetCommand");
 });
+
+test("listFriendSuggestions returns top 5 ranked matches by interest similarity", async () => {
+  const { client } = createDocClient(async (command) => {
+    if (commandName(command) === "GetCommand") {
+      return {
+        Item: {
+          PK: "USER#user-a",
+          SK: "PROFILE",
+          interests: ["Hiking", "Cafe"],
+        },
+      };
+    }
+
+    if (commandName(command) === "QueryCommand") {
+      return {
+        Items: [
+          {
+            PK: "USER#user-a",
+            SK: "FRIEND#user-f",
+            friendId: "user-f",
+            status: "ACCEPTED",
+          },
+        ],
+      };
+    }
+
+    if (commandName(command) === "ScanCommand") {
+      return {
+        Items: [
+          { PK: "USER#user-c", SK: "PROFILE", userId: "user-c", name: "Charlie", interests: ["Hiking", "Cafe"] },
+          { PK: "USER#user-b", SK: "PROFILE", userId: "user-b", name: "Bella", interests: ["Hiking", "Cafe", "Yoga"] },
+          { PK: "USER#user-g", SK: "PROFILE", userId: "user-g", name: "Grace", interests: ["Cafe"] },
+          { PK: "USER#user-d", SK: "PROFILE", userId: "user-d", name: "Dylan", interests: ["Hiking", "Music"] },
+          { PK: "USER#user-e", SK: "PROFILE", userId: "user-e", name: "Ethan", interests: ["Cafe", "Music"] },
+          { PK: "USER#user-h", SK: "PROFILE", userId: "user-h", name: "Hana", interests: ["Hiking", "Reading"] },
+          { PK: "USER#user-i", SK: "PROFILE", userId: "user-i", name: "Ivy", interests: ["Swimming"] },
+          { PK: "USER#user-f", SK: "PROFILE", userId: "user-f", name: "Felix", interests: ["Hiking", "Cafe"] },
+        ],
+      };
+    }
+
+    throw new Error(`Unexpected command: ${commandName(command)}`);
+  });
+
+  const response = await listFriendSuggestions("user-a", client);
+
+  assert.equal(response.userId, "user-a");
+  assert.equal(response.suggestions.length, 5);
+  assert.deepEqual(
+    response.suggestions.map((suggestion) => suggestion.userId),
+    ["user-c", "user-b", "user-g", "user-d", "user-e"]
+  );
+  assert.equal(response.suggestions[0].score, 1);
+  assert.equal(response.suggestions[1].score, 0.6667);
+  assert.ok(response.suggestions.every((suggestion) => suggestion.score > 0));
+});
