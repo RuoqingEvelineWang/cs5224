@@ -57,6 +57,12 @@ export default function Dashboard() {
                 </div>
                 <p className="mt-1 text-sm text-stone-600">{formatDateTime(event.selectedTime)}</p>
                 <p className="mt-1 text-sm text-stone-600">{event.selectedVenue}</p>
+                <Link
+                  to={`/events/${event.eventId}/workspace`}
+                  className="mt-3 inline-block rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:border-stone-400"
+                >
+                  Open Workspace
+                </Link>
               </li>
             ))}
           </ul>
@@ -72,6 +78,12 @@ export default function Dashboard() {
                   {invite.fromUser} invited you to a {invite.venueType} event.
                 </p>
                 <p className="mt-1 text-sm text-stone-600">{formatDateTime(invite.suggestedTime)}</p>
+                <Link
+                  to={`/events/${invite.eventId}/workspace`}
+                  className="mt-3 inline-block rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:border-stone-400"
+                >
+                  Open Invite Workspace
+                </Link>
               </li>
             ))}
           </ul>
