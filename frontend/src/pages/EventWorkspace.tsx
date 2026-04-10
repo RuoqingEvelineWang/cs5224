@@ -29,8 +29,13 @@ function formatDayHeader(dateStr: string) {
   };
 }
 
+// Hours must be zero-padded to match the server's "YYYY-MM-DD-HH" validation
+// regex (e.g. 9 AM → "09", not "9"). Without padding, two things break:
+//   1. The server rejects single-digit hours with a 400 error.
+//   2. Grid keys mismatch the keys stored in slotCounts by the server,
+//      so the creator's voting grid appears empty for all AM slots.
 function slotKey(date: string, hour: number) {
-  return `${date}-${hour}`;
+  return `${date}-${String(hour).padStart(2, '0')}`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

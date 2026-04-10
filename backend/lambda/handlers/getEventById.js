@@ -60,10 +60,21 @@ export async function getEventById(userId, eventId, docClient) {
 
   return {
     ...eventDetail,
+    slotCounts: computeSlotCounts(members),
     creatorName: userMap[eventDetail.creatorId] || 'Creator',
     participants: eventDetail.participants.map(p => ({
       ...p,
       name: userMap[p.userId] || 'Unknown User'
     }))
   };
+}
+
+function computeSlotCounts(members) {
+  const counts = {};
+  for (const member of members) {
+    for (const slot of (member.availableTimeSlots || [])) {
+      counts[slot] = (counts[slot] || 0) + 1;
+    }
+  }
+  return counts;
 }
