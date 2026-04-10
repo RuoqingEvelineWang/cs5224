@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { fetchAuthSession } from "aws-amplify/auth";
 import {
   fetchVenues,
-  finalizeEvent,
   leaveEvent,
   getDatesInRange,
 } from "../api/Event.tsx";
@@ -247,6 +246,9 @@ export default function EventWorkspace() {
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
+  // Participant RSVP (confirm / decline attendance)
+  const [rsvping, setRsvping] = useState(false);
+
   const isDragging = useRef(false);
   const dragMode = useRef<"add" | "remove">("add");
 
@@ -356,16 +358,24 @@ export default function EventWorkspace() {
     };
     setFinalizing(true);
     try {
-      await finalizeEvent(eventId, slot, venue.venueId);
-      
       const session = await fetchAuthSession();
       const token = session.tokens?.idToken?.toString();
       const apiUrl = import.meta.env.VITE_API_URL;
-      const response = await fetch(`${apiUrl}/events/${eventId}`, {
-        headers: { 'Authorization': token || '' }
+
+      // Persist the creator's chosen time + venue and advance event to AWAITING_CONFIRMATION
+      const finalizeRes = await fetch(`${apiUrl}/events/${eventId}/finalize`, {
+        method: 'POST',
+        headers: { 'Authorization': token || '', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectedTime: slot, selectedVenue: venue }),
       });
-      const { data: finalEvent } = await response.json();
-      
+      if (!finalizeRes.ok) throw new Error(`Finalize failed: ${finalizeRes.status}`);
+
+      // Refetch the updated event so the details page has fresh data
+      const eventRes = await fetch(`${apiUrl}/events/${eventId}`, {
+        headers: { 'Authorization': token || '' },
+      });
+      const { data: finalEvent } = await eventRes.json();
+
       navigate(`/events/${eventId}/details`, {
         state: { event: finalEvent, selectedSlot: slot, selectedVenue: venue },
       });
@@ -373,6 +383,63 @@ export default function EventWorkspace() {
       console.error("Failed to finalize event:", err);
     } finally {
       setFinalizing(false);
+    }
+  }
+
+  async function handleRevertSchedule() {
+    if (!eventId) return;
+    setRsvping(true); // reuse loading flag to disable buttons
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const res = await fetch(`${apiUrl}/events/${eventId}/unfinalize`, {
+        method: 'POST',
+        headers: { 'Authorization': token || '', 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Unfinalize failed: ${res.status}`);
+      // Refresh event state — status will now be SCHEDULING
+      const eventRes = await fetch(`${apiUrl}/events/${eventId}`, {
+        headers: { 'Authorization': token || '' },
+      });
+      const { data: refreshed } = await eventRes.json();
+      setEvent(refreshed);
+      setSelectedFinalSlotKey(null);
+    } catch (err) {
+      console.error("Failed to revert schedule:", err);
+    } finally {
+      setRsvping(false);
+    }
+  }
+
+  async function handleRsvp(action: 'confirm' | 'decline') {
+    if (!eventId) return;
+    setRsvping(true);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const res = await fetch(`${apiUrl}/events/${eventId}/${action}`, {
+        method: 'POST',
+        headers: { 'Authorization': token || '', 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`RSVP failed: ${res.status}`);
+
+      // Refetch the event so the participant badges update immediately
+      const eventRes = await fetch(`${apiUrl}/events/${eventId}`, {
+        headers: { 'Authorization': token || '' },
+      });
+      const { data: refreshed } = await eventRes.json();
+      setEvent(refreshed);
+
+      // If the event just became FINALIZED, navigate to the details page
+      if (refreshed?.status === 'FINALIZED') {
+        navigate(`/events/${eventId}/details`, { state: { event: refreshed } });
+      }
+    } catch (err) {
+      console.error(`Failed to ${action} attendance:`, err);
+    } finally {
+      setRsvping(false);
     }
   }
 
@@ -479,9 +546,21 @@ export default function EventWorkspace() {
       {/* ── AWAITING_CONFIRMATION banner ── */}
       {event.status === 'AWAITING_CONFIRMATION' && (
         <div className="rounded-2xl bg-violet-50 border border-violet-200 p-5 space-y-2">
-          <p className="text-sm font-semibold text-violet-800">
-            📩 Event scheduled — waiting for participants to confirm
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-violet-800">
+              📩 Event scheduled — waiting for participants to confirm
+            </p>
+            {/* Creator can abandon the current schedule early without waiting for all RSVPs */}
+            {isCreator && (
+              <button
+                onClick={handleRevertSchedule}
+                disabled={rsvping}
+                className="shrink-0 text-xs px-3 py-1.5 rounded-xl border border-violet-300 text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-50"
+              >
+                Change Schedule
+              </button>
+            )}
+          </div>
           {event.selectedTime && event.selectedVenue && (
             <p className="text-sm text-violet-700">
               {event.selectedTime.date} at {formatHour(event.selectedTime.startHour)} · {event.selectedVenue.name}
@@ -502,9 +581,35 @@ export default function EventWorkspace() {
               );
             })}
           </div>
-          <p className="text-xs text-violet-500">
-            Participants confirm or decline via their Notifications.
-          </p>
+          {/* Show RSVP buttons when the current user hasn't responded yet */}
+          {currentUserId && !isCreator && (() => {
+            const alreadyConfirmed = (event.confirmedUserIds ?? []).includes(currentUserId);
+            const alreadyDeclined  = (event.declinedUserIds  ?? []).includes(currentUserId);
+            if (alreadyConfirmed) {
+              return <p className="text-xs text-green-600 font-medium">✓ You confirmed your attendance.</p>;
+            }
+            if (alreadyDeclined) {
+              return <p className="text-xs text-red-500 font-medium">✗ You declined this event.</p>;
+            }
+            return (
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => handleRsvp('confirm')}
+                  disabled={rsvping}
+                  className="px-4 py-1.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                >
+                  {rsvping ? '…' : '✓ Confirm Attendance'}
+                </button>
+                <button
+                  onClick={() => handleRsvp('decline')}
+                  disabled={rsvping}
+                  className="px-4 py-1.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition-colors disabled:opacity-50"
+                >
+                  {rsvping ? '…' : '✗ Decline'}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       )}
 
