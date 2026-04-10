@@ -5,6 +5,7 @@ import { getEventById } from "./handlers/getEventById.js";
 import { getFriends } from "./handlers/getFriends.js";
 import { createEvent } from "./handlers/createEvent.js";
 import { getMyProfile, upsertMyProfile, geocodePostalCode } from "./handlers/userHandlers.js";
+import { submitAvailability } from "./handlers/submitAvailability.js";
 import {
   sendFriendRequest,
   acceptFriendRequest,
@@ -89,6 +90,14 @@ export const handler = async (event) => {
       const body = parseJsonBody(event);
       const data = await createEvent(userId, body, docClient);
       return respond(201, { data, error: null });
+    }
+
+    if (method === "POST" && (resource === "/events/{id}/availability" || /^\/events\/[^/]+\/availability$/.test(path))) {
+      const eventId = event?.pathParameters?.id || path.split("/")[2];
+      if (!eventId) throw new HttpError(400, "Missing event id.");
+      const body = parseJsonBody(event);
+      const data = await submitAvailability(userId, eventId, body, docClient);
+      return respond(200, { data, error: null });
     }
 
     if (isRoute(method, resource, path, "GET", "/friends")) {

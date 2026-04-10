@@ -2,7 +2,7 @@ export type VenueType = 'Cafe' | 'Park' | 'Restaurant' | 'Mall' | 'Library' | 'S
 
 export type EventStatus =
   | 'COLLECTING_AVAILABILITY'
-  | 'SELECTING_VENUE'
+  | 'SCHEDULING'
   | 'AWAITING_CONFIRMATION'
   | 'FINALIZED';
 

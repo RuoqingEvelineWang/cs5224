@@ -26,7 +26,7 @@ export type Participant = {
 export type EventDetail = {
   eventId: string;
   title: string;
-  status: 'COLLECTING_AVAILABILITY' | 'SELECTING_VENUE' | 'AWAITING_CONFIRMATION' | 'FINALIZED';
+  status: 'COLLECTING_AVAILABILITY' | 'SCHEDULING' | 'AWAITING_CONFIRMATION' | 'FINALIZED';
   creatorId: string;
   creatorName: string;
   participants: Participant[];
@@ -709,14 +709,14 @@ const DEFAULT_EVENTS: EventDetail[] = [
   },
 
   // ════════════════════════════════════════════════════════════════════════════
-  // D. SELECTING_VENUE — you're creator, all submitted → generates ALL_SUBMITTED notifications
+  // D. SCHEDULING — you're creator, all submitted → generates ALL_SUBMITTED notifications
   //    (appears in EventList "In Progress" section; generates bell notifications)
   // ════════════════════════════════════════════════════════════════════════════
 
   {
     eventId: 'evt-selving-creator-01',
     title: 'Team Lunch @ Orchard [Creator: pick slot + venue now!]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -734,7 +734,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-02',
     title: 'Yoga & Brunch [Creator: 2-person, clear winner slot]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -751,7 +751,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-03',
     title: 'Park BBQ Planning [Creator: 4 pax all voted]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -770,7 +770,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-04',
     title: 'Café Hop @ Tiong Bahru [Creator: 3-way tie, choose wisely]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -788,7 +788,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-05',
     title: 'Library Group Study [Creator: only 1 slot fits everyone]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -806,7 +806,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-06',
     title: 'Shopping @ Vivocity [Creator: 5-person all aligned]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -826,7 +826,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-07',
     title: 'Cycling @ Pasir Ris [Creator: early AM slots popular]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -844,7 +844,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-08',
     title: 'Birthday Dinner for Alice [Creator: evening slots only]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -863,7 +863,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-09',
     title: 'Sports Hall Volleyball [Creator: slots clustered same day]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -882,7 +882,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-creator-10',
     title: 'Art Jam @ Cafe [Creator: many slots scattered]',
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: CURRENT_USER_ID,
     creatorName: CURRENT_USER_NAME,
     participants: [
@@ -906,14 +906,14 @@ const DEFAULT_EVENTS: EventDetail[] = [
   },
 
   // ════════════════════════════════════════════════════════════════════════════
-  // E. SELECTING_VENUE — you're participant, creator hasn't picked yet
+  // E. SCHEDULING — you're participant, creator hasn't picked yet
   //    (appears in EventList "In Progress" section)
   // ════════════════════════════════════════════════════════════════════════════
 
   {
     eventId: 'evt-selving-part-01',
     title: "Daisy's Board Games Night [Participant: waiting for Daisy to pick]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-daisy',
     creatorName: 'Daisy',
     participants: [
@@ -931,7 +931,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-02',
     title: "Alice's Spa Day [Participant: all submitted, creator selecting]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-alice',
     creatorName: 'Alice',
     participants: [
@@ -949,7 +949,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-03',
     title: "Bob's Fishing Trip [Participant: 3-person, awaiting selection]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-bob',
     creatorName: 'Bob',
     participants: [
@@ -967,7 +967,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-04',
     title: "Charlie's Bowling Night [Participant: waiting on creator]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-charlie',
     creatorName: 'Charlie',
     participants: [
@@ -986,7 +986,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-05',
     title: "Ethan's Cooking Class [Participant: 5-pax submitted]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-ethan',
     creatorName: 'Ethan',
     participants: [
@@ -1006,7 +1006,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-06',
     title: "George's Gym Circuit [Participant: waiting for venue pick]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-george',
     creatorName: 'George',
     participants: [
@@ -1024,7 +1024,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-07',
     title: "Hannah's Bake Sale Prep [Participant: only 2 viable slots]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-hannah',
     creatorName: 'Hannah',
     participants: [
@@ -1042,7 +1042,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-08',
     title: "Fiona's Photography Portfolio [Participant: all slots same count]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-fiona',
     creatorName: 'Fiona',
     participants: [
@@ -1059,7 +1059,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-09',
     title: "Alice's Library Quiet Hour [Participant: 4/4 submitted]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-alice',
     creatorName: 'Alice',
     participants: [
@@ -1078,7 +1078,7 @@ const DEFAULT_EVENTS: EventDetail[] = [
   {
     eventId: 'evt-selving-part-10',
     title: "Bob's Seafood Dinner [Participant: large group fully voted]",
-    status: 'SELECTING_VENUE',
+    status: 'SCHEDULING',
     creatorId: 'u-bob',
     creatorName: 'Bob',
     participants: [
@@ -1840,8 +1840,8 @@ const DEFAULT_EVENTS: EventDetail[] = [
   },
   {
     eventId: 'evt-rejoin-04',
-    title: "Bob's Park Run [Left: in SELECTING_VENUE, can still rejoin]",
-    status: 'SELECTING_VENUE',
+    title: "Bob's Park Run [Left: in SCHEDULING, can still rejoin]",
+    status: 'SCHEDULING',
     creatorId: 'u-bob',
     creatorName: 'Bob',
     participants: [{ userId: 'u-bob', name: 'Bob' }, { userId: 'u-alice', name: 'Alice' }],
@@ -1902,14 +1902,14 @@ function getDatesInRange(start: string, end: string): string[] {
 
 export const STATUS_LABELS: Record<EventDetail['status'], string> = {
   COLLECTING_AVAILABILITY: 'Collecting',
-  SELECTING_VENUE: 'Selecting Venue',
+  SCHEDULING: 'Scheduling',
   AWAITING_CONFIRMATION: 'Awaiting Confirmation',
   FINALIZED: 'Confirmed',
 };
 
 export const STATUS_COLORS: Record<EventDetail['status'], string> = {
   COLLECTING_AVAILABILITY: 'bg-amber-100 text-amber-700',
-  SELECTING_VENUE: 'bg-blue-100 text-blue-700',
+  SCHEDULING: 'bg-blue-100 text-blue-700',
   AWAITING_CONFIRMATION: 'bg-violet-100 text-violet-700',
   FINALIZED: 'bg-green-100 text-green-700',
 };
@@ -1928,7 +1928,7 @@ export async function fetchMyEvents(): Promise<EventDetail[]> {
           case 'COLLECTING_AVAILABILITY':
             // Show only if user already submitted (pending invites shown separately)
             return (e.availabilitySubmittedBy ?? []).includes(CURRENT_USER_ID);
-          case 'SELECTING_VENUE':
+          case 'SCHEDULING':
             return true;
           case 'AWAITING_CONFIRMATION':
             // Show only if user confirmed (unconfirmed → shown via notification only)
@@ -2016,7 +2016,7 @@ export async function createFullEvent(input: CreateEventInput): Promise<EventDet
 /**
  * Submit current user's availability slots.
  * Accumulates slot vote counts and tracks who submitted.
- * When all participants have submitted, status advances to SELECTING_VENUE.
+ * When all participants have submitted, status advances to SCHEDULING.
  */
 export async function submitAvailability(
   eventId: string,
@@ -2051,7 +2051,7 @@ export async function submitAvailability(
         ...ev,
         availabilitySubmittedBy: newSubmitted,
         slotCounts: newCounts,
-        status: allSubmitted ? 'SELECTING_VENUE' : 'COLLECTING_AVAILABILITY',
+        status: allSubmitted ? 'SCHEDULING' : 'COLLECTING_AVAILABILITY',
       };
       writeEventStore(newEvents);
       resolve();
@@ -2201,7 +2201,7 @@ export async function leaveEvent(eventId: string): Promise<void> {
   });
 }
 
-/** Revert a FINALIZED event back to SELECTING_VENUE (creator only) */
+/** Revert a FINALIZED event back to SCHEDULING (creator only) */
 export async function unfinalizeEvent(eventId: string): Promise<void> {
   return new Promise(resolve => {
     setTimeout(() => {
@@ -2211,7 +2211,7 @@ export async function unfinalizeEvent(eventId: string): Promise<void> {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { selectedTime: _t, selectedVenue: _v, ...rest } = events[idx];
         const newEvents = [...events];
-        newEvents[idx] = { ...rest, status: 'SELECTING_VENUE', confirmedUserIds: [], declinedUserIds: [] };
+        newEvents[idx] = { ...rest, status: 'SCHEDULING', confirmedUserIds: [], declinedUserIds: [] };
         writeEventStore(newEvents);
       }
       resolve();
@@ -2227,7 +2227,7 @@ export async function fetchVenues(_eventId: string): Promise<Venue[]> {
 }
 
 /**
- * Fetch slot voting data (for creator in SELECTING_VENUE state).
+ * Fetch slot voting data (for creator in SCHEDULING state).
  * Returns CommonTime[] with count + participant names for each voted slot.
  */
 export async function fetchCommonTimes(eventId: string): Promise<CommonTime[]> {

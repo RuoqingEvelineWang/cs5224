@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { fetchAuthSession } from "aws-amplify/auth";
 import {
   fetchVenues,
-  submitAvailability,
   finalizeEvent,
   leaveEvent,
   getDatesInRange,
@@ -39,7 +38,7 @@ function slotKey(date: string, hour: number) {
 function StatusBadge({ status }: { status: EventDetail["status"] }) {
   const map: Record<EventDetail["status"], { label: string; cls: string }> = {
     COLLECTING_AVAILABILITY: { label: "Collecting Availability", cls: "bg-amber-100 text-amber-700" },
-    SELECTING_VENUE:         { label: "Selecting Venue",         cls: "bg-blue-100 text-blue-700" },
+    SCHEDULING:              { label: "Scheduling",              cls: "bg-blue-100 text-blue-700" },
     AWAITING_CONFIRMATION:   { label: "Awaiting Confirmation",   cls: "bg-violet-100 text-violet-700" },
     FINALIZED:               { label: "Confirmed",               cls: "bg-green-100 text-green-700" },
   };
@@ -116,7 +115,7 @@ function SelectionGrid({ dates, hours, selectedSlots, onMouseDown, onMouseEnter 
   );
 }
 
-// ─── Voting Grid (creator in SELECTING_VENUE — shows vote counts, click to pick) ─
+// ─── Voting Grid (creator in SCHEDULING — shows vote counts, click to pick) ─
 
 interface VotingGridProps {
   dates: string[];
@@ -271,7 +270,7 @@ export default function EventWorkspace() {
         const { data } = await response.json();
         setEvent(data);
         
-        if (data.status === 'SELECTING_VENUE') setActiveTab("availability");
+        if (data.status === 'SCHEDULING') setActiveTab("availability");
       } catch (error) {
         console.error("Error loading workspace:", error);
       } finally {
@@ -317,22 +316,27 @@ export default function EventWorkspace() {
   async function handleSubmitAvailability() {
     if (!eventId || !currentUserId) return;
     setSubmitting(true);
-    const slots: TimeSlot[] = Array.from(selectedSlots).map(key => {
-      const lastDash = key.lastIndexOf("-");
-      return { date: key.slice(0, lastDash), startHour: parseInt(key.slice(lastDash + 1)) };
-    });
-    
-    await submitAvailability(eventId, currentUserId, slots);
-    
-    // Re-fetch to get updated slot counts
+    const availableTimeSlots = Array.from(selectedSlots);
+
     const session = await fetchAuthSession();
     const token = session.tokens?.idToken?.toString();
     const apiUrl = import.meta.env.VITE_API_URL;
+
+    await fetch(`${apiUrl}/events/${eventId}/availability`, {
+      method: 'POST',
+      headers: {
+        'Authorization': token || '',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ availableTimeSlots }),
+    });
+
+    // Re-fetch to get updated slot counts
     const response = await fetch(`${apiUrl}/events/${eventId}`, {
       headers: { 'Authorization': token || '' }
     });
     const { data: refreshed } = await response.json();
-    
+
     setEvent(refreshed);
     setSubmitting(false);
     setSubmitted(true);
@@ -404,7 +408,7 @@ export default function EventWorkspace() {
   const isCreator = event.creatorId === currentUserId;
   const alreadySubmitted = (event.availabilitySubmittedBy ?? []).includes(currentUserId);
 
-  const venueUnlocked = isCreator && event.status === 'SELECTING_VENUE' && selectedFinalSlotKey !== null;
+  const venueUnlocked = isCreator && event.status === 'SCHEDULING' && selectedFinalSlotKey !== null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -508,13 +512,13 @@ export default function EventWorkspace() {
               activeTab === "availability" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-800"
             }`}
           >
-            {event.status === 'SELECTING_VENUE' && isCreator ? "🗳 Slot Voting" : "🗓 Availability"}
+            {event.status === 'SCHEDULING' && isCreator ? "🗳 Slot Voting" : "🗓 Availability"}
           </button>
           <button
             onClick={() => venueUnlocked && setActiveTab("venue")}
             disabled={!venueUnlocked}
             title={!venueUnlocked ? (
-              isCreator && event.status === 'SELECTING_VENUE'
+              isCreator && event.status === 'SCHEDULING'
                 ? "Select a time slot above first"
                 : "Submit your availability first"
             ) : undefined}
@@ -578,8 +582,8 @@ export default function EventWorkspace() {
         </div>
       )}
 
-      {/* ── Availability Tab: creator sees vote counts in SELECTING_VENUE ── */}
-      {activeTab === "availability" && event.status === 'SELECTING_VENUE' && isCreator && (
+      {/* ── Availability Tab: creator sees vote counts in SCHEDULING ── */}
+      {activeTab === "availability" && event.status === 'SCHEDULING' && isCreator && (
         <div className="space-y-4">
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
             All {totalParticipants} participants have submitted. Click a highlighted slot to select it as the final time.
@@ -618,8 +622,8 @@ export default function EventWorkspace() {
         </div>
       )}
 
-      {/* ── Availability Tab: non-creator waiting in SELECTING_VENUE ── */}
-      {activeTab === "availability" && event.status === 'SELECTING_VENUE' && !isCreator && (
+      {/* ── Availability Tab: non-creator waiting in SCHEDULING ── */}
+      {activeTab === "availability" && event.status === 'SCHEDULING' && !isCreator && (
         <div className="flex flex-col items-center py-12 gap-3 text-center">
           <div className="text-4xl">⏳</div>
           <p className="text-gray-700 font-medium">All participants have submitted their availability.</p>

@@ -63,7 +63,7 @@ export async function fetchNotifications(): Promise<NotificationItem[]> {
     // 1. Notify creator: all participants submitted → can now select slot
     if (
       event.creatorId === CURRENT_USER_ID &&
-      event.status === 'SELECTING_VENUE'
+      event.status === 'SCHEDULING'
     ) {
       dynamic.push({
         id: `notif-all-submitted-${event.eventId}`,
@@ -107,7 +107,7 @@ export function countActionableNotifications(): number {
   let count = 0;
 
   events.forEach(event => {
-    if (event.creatorId === CURRENT_USER_ID && event.status === 'SELECTING_VENUE') {
+    if (event.creatorId === CURRENT_USER_ID && event.status === 'SCHEDULING') {
       count++;
     }
     if (
@@ -136,7 +136,7 @@ export async function fetchDashboardData(): Promise<DashboardData> {
         return (e.availabilitySubmittedBy ?? []).includes(CURRENT_USER_ID);
       if (e.status === 'AWAITING_CONFIRMATION')
         return (e.confirmedUserIds ?? []).includes(CURRENT_USER_ID);
-      return e.status === 'SELECTING_VENUE' || e.status === 'FINALIZED';
+      return e.status === 'SCHEDULING' || e.status === 'FINALIZED';
     })
     .sort((a, b) => {
       const aDate = a.selectedTime ? a.selectedTime.date : a.dateRange.start;

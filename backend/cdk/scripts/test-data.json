@@ -1,9 +1,9 @@
 [
   {
     "PK": "EVENT#evt-001",
-    "SK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "SK": "USER#994aa52c-20b1-703b-937c-aed0eddb7dd3",
     "Type": "EventMember",
-    "GSI1PK": "USER#79deb438-5051-701f-227b-2e41b104743e",
+    "GSI1PK": "USER#994aa52c-20b1-703b-937c-aed0eddb7dd3",
     "GSI1SK": "EVENT#evt-001",
     "inviteStatus": "ACCEPTED",
     "role": "CREATOR"
@@ -114,7 +114,7 @@
     "SK": "METADATA",
     "Type": "EventInfo",
     "title": "Project Sync",
-    "status": "SELECTING_VENUE",
+    "status": "SCHEDULING",
     "creatorId": "79deb438-5051-701f-227b-2e41b104743e",
     "venueType": "Library",
     "dateRange": { "start": "2026-04-14", "end": "2026-04-14" }
