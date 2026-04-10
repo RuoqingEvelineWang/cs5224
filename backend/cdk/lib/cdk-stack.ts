@@ -10,8 +10,12 @@ export class CdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // 1. Define the Stage (default to 'dev' if not provided)
-    const stage = process.env.STAGE || 'dev';
+    // Prefer `cdk -c stage=...`, while still allowing env-based overrides in CI.
+    const stageContext = this.node.tryGetContext('stage');
+    const stage =
+      (typeof stageContext === 'string' && stageContext.trim()) ||
+      process.env.STAGE ||
+      'dev';
     const prefix = `midmeet-${stage}`;
 
     // 2. Define the Single Main Table
@@ -26,7 +30,9 @@ export class CdkStack extends cdk.Stack {
         type: dynamodb.AttributeType.STRING 
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
       // Change to RETAIN for production environments
       removalPolicy: cdk.RemovalPolicy.DESTROY, 
     });
@@ -76,7 +82,9 @@ export class CdkStack extends cdk.Stack {
     const apiLambda = new lambda.Function(this, 'ApiLambda', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset('../lambda'),
+      code: lambda.Code.fromAsset('../lambda', {
+        exclude: ['node_modules'],
+      }),
       environment: {
         MAIN_TABLE: mainTable.tableName,
         MAIN_TABLE_GSI1: 'GSI1',
@@ -115,6 +123,10 @@ export class CdkStack extends cdk.Stack {
 
     // POST /events
     eventsResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/availability
+    const availabilityResource = singleEventResource.addResource('availability');
+    availabilityResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
 
     // Geocode route
     const geocodeResource = api.root.addResource('geocode');

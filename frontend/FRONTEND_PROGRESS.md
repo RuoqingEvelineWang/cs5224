@@ -1,9 +1,17 @@
 # MidMeet Frontend — Developer Reference
 
 > **Audience:** Backend engineers onboarding to the project, and frontend engineers picking up existing work.
-> **Last Updated:** 2026-03-28
-> **Author:** Li Junxian (branch: `junxian-frontend`)
+> **Last Updated:** 2026-04-09
+> **Author:** Li Junxian (branch: `junxian-frontend`); Huang Zhenxu (branch: `zhenxu-backend`)
 > **Stack:** React 19 · TypeScript · Vite · Tailwind CSS · React Router v7 · AWS Amplify v6 (Cognito)
+
+---
+
+## Changelog
+
+| Date | Author | Description |
+|------|--------|-------------|
+| 2026-04-09 | Huang Zhenxu | Renamed event status `SELECTING_VENUE` → `SCHEDULING` (the state where the creator simultaneously selects a final time and venue). Updated type definitions, state machine diagram, status transition table, mock data, notification rules, and all related documentation. |
 
 ---
 
@@ -202,7 +210,7 @@ type EventDetail = {
   // ── Availability tracking ──────────────────────────────────────
   availabilitySubmittedBy?: string[];
   // userIds who submitted slots. Length compared to participants.length
-  // to determine when status should advance to SELECTING_VENUE.
+  // to determine when status should advance to SCHEDULING.
 
   slotCounts?: Record<string, number>;
   // Key format: "YYYY-MM-DD-HH" (e.g. "2026-04-15-14" = 2 PM on 15 Apr 2026)
@@ -224,7 +232,7 @@ type EventDetail = {
   isPublic: boolean;  // Always false — public events are not supported
   description?: string;
 
-  // ── Finalization data (set during SELECTING_VENUE) ─────────────
+  // ── Finalization data (set during SCHEDULING) ─────────────
   selectedTime?: TimeSlot;
   selectedVenue?: Venue;
 };
@@ -297,7 +305,7 @@ Slots are stored as string keys: `"YYYY-MM-DD-HH"` where `HH` is the integer hou
 ```typescript
 type EventStatus =
   | 'COLLECTING_AVAILABILITY'
-  | 'SELECTING_VENUE'
+  | 'SCHEDULING'
   | 'AWAITING_CONFIRMATION'
   | 'FINALIZED';
 
@@ -403,7 +411,7 @@ Events progress through exactly four statuses. **Transitions are irreversible ex
                 │ availabilitySubmittedBy.length >= participants.length      │
                 ▼                                                           │
   ┌──────────────────────────────┐                                          │
-  │      SELECTING_VENUE         │  Creator picks slot + venue               │
+  │         SCHEDULING           │  Creator picks slot + venue               │
   │                              │  → auto-advances                          │
   │  • Creator sees vote-count   │                                          │
   │    heatmap, picks final slot │                                          │
@@ -425,7 +433,7 @@ Events progress through exactly four statuses. **Transitions are irreversible ex
                 ▼                                                           │
   ┌──────────────────────────────┐                                          │
   │          FINALIZED           │──── Creator can revert ───────────────────┘
-  │                              │     unfinalizeEvent() → SELECTING_VENUE
+  │                              │     unfinalizeEvent() → SCHEDULING
   │  • Read-only event detail    │
   │  • participants[] contains   │
   │    only confirmed users      │
@@ -436,10 +444,10 @@ Events progress through exactly four statuses. **Transitions are irreversible ex
 
 | Transition | Trigger | Actor | Code Location |
 |---|---|---|---|
-| `COLLECTING` → `SELECTING_VENUE` | `availabilitySubmittedBy.length >= participants.length` | Automatic | `submitAvailability()` |
-| `SELECTING_VENUE` → `AWAITING_CONFIRMATION` | Creator selects slot + venue | Creator only | `finalizeEvent()` |
+| `COLLECTING` → `SCHEDULING` | `availabilitySubmittedBy.length >= participants.length` | Automatic | `submitAvailability()` |
+| `SCHEDULING` → `AWAITING_CONFIRMATION` | Creator selects slot + venue | Creator only | `finalizeEvent()` |
 | `AWAITING_CONFIRMATION` → `FINALIZED` | `confirmedUserIds + declinedUserIds >= participants.length` | Automatic | `confirmAttendance()` / `declineAttendance()` |
-| `FINALIZED` → `SELECTING_VENUE` | Creator explicitly reverts | Creator only | `unfinalizeEvent()` |
+| `FINALIZED` → `SCHEDULING` | Creator explicitly reverts | Creator only | `unfinalizeEvent()` |
 
 ### Event Visibility Rules
 
@@ -448,7 +456,7 @@ Events progress through exactly four statuses. **Transitions are irreversible ex
 | Status | Included? | Condition |
 |---|---|---|
 | `COLLECTING_AVAILABILITY` | Conditional | Only if `availabilitySubmittedBy` includes current user |
-| `SELECTING_VENUE` | Always | User is in `participants[]` |
+| `SCHEDULING` | Always | User is in `participants[]` |
 | `AWAITING_CONFIRMATION` | Conditional | Only if current user is in `confirmedUserIds` |
 | `FINALIZED` | Always | User is in `participants[]` |
 
@@ -526,7 +534,7 @@ Primary events hub. Five sections, each showing an `EventCard`:
 | Section | Filter | Badge | CTA |
 |---|---|---|---|
 | **Pending Invitations** | `COLLECTING` + not in `availabilitySubmittedBy` | Orange "Awaiting Your Vote" | Submit → (workspace) |
-| **In Progress** | `COLLECTING` (submitted) or `SELECTING_VENUE` | Status badge | Open → (workspace) |
+| **In Progress** | `COLLECTING` (submitted) or `SCHEDULING` | Status badge | Open → (workspace) |
 | **Awaiting Confirmation** | `AWAITING_CONFIRMATION` + in `confirmedUserIds` | Violet badge | View → (workspace) |
 | **Confirmed Events** | `FINALIZED` | Green badge | Details → (event details) |
 | **Left — Can Rejoin** | In `pendingUserIds[]` | Amber "Pending" | Rejoin → |
@@ -596,13 +604,13 @@ No tabs shown. Displays a violet banner with:
 - **Interaction:** click-and-drag to paint slots green. First cell's action (add/remove) sets the drag mode for the entire gesture. `mouseup` anywhere stops drag.
 - **Privacy guarantee:** Only own selections shown. No other participants' data rendered. No overlays.
 - Submit button → `submitAvailability(eventId, userId, slots[])`.
-- If after this submit all participants have now submitted → event auto-transitions to `SELECTING_VENUE`.
+- If after this submit all participants have now submitted → event auto-transitions to `SCHEDULING`.
 
 #### COLLECTING_AVAILABILITY — Already submitted
 
 Green "submitted" banner shown instead of grid.
 
-#### SELECTING_VENUE — Creator
+#### SCHEDULING — Creator
 
 **Tab: "🗳 Slot Voting"** → `VotingGrid` component.
 
@@ -722,8 +730,8 @@ The `DEFAULT_EVENTS` array contains 80+ seed events. Categories:
 | Pending Invitations (not submitted) | 10 | `COLLECTING_AVAILABILITY` |
 | In Progress — creator, submitted | 10 | `COLLECTING_AVAILABILITY` |
 | In Progress — participant, submitted | 10 | `COLLECTING_AVAILABILITY` |
-| Selecting Venue — you're creator (generates bell notifications) | **10** | `SELECTING_VENUE` |
-| Selecting Venue — you're participant | 10 | `SELECTING_VENUE` |
+| Scheduling — you're creator (generates bell notifications) | **10** | `SCHEDULING` |
+| Scheduling — you're participant | 10 | `SCHEDULING` |
 | Awaiting Confirmation — you haven't responded (generates notifications) | 10 | `AWAITING_CONFIRMATION` |
 | Awaiting Confirmation — you've confirmed | 10 | `AWAITING_CONFIRMATION` |
 | Finalized | 10 | `FINALIZED` |
@@ -738,13 +746,13 @@ The `DEFAULT_EVENTS` array contains 80+ seed events. Categories:
 | `fetchPendingEvents` | `() → EventDetail[]` | Events where user in `pendingUserIds` | 300 ms |
 | `fetchEventById` | `(eventId) → EventDetail` | Finds by `eventId` in store, rejects if not found | 300 ms |
 | `createFullEvent` | `(input) → EventDetail` | Prepends new event to store | 400 ms |
-| `submitAvailability` | `(eventId, userId, slots[]) → void` | Accumulates `slotCounts`; auto-advances to `SELECTING_VENUE` when all submit | 600 ms |
+| `submitAvailability` | `(eventId, userId, slots[]) → void` | Accumulates `slotCounts`; auto-advances to `SCHEDULING` when all submit | 600 ms |
 | `finalizeEvent` | `(eventId, slot, venueId) → void` | Sets `selectedTime`/`selectedVenue`; status → `AWAITING_CONFIRMATION` | 500 ms |
 | `confirmAttendance` | `(eventId) → void` | Adds to `confirmedUserIds`; auto-advances to `FINALIZED` when all respond | 400 ms |
 | `declineAttendance` | `(eventId) → void` | Adds to `declinedUserIds`; same auto-finalize logic | 400 ms |
 | `joinEvent` | `(eventId) → void` | Moves user from `pendingUserIds` to `participants` | 300 ms |
 | `leaveEvent` | `(eventId) → void` | Removes from `participants`, adds to `pendingUserIds`; creator blocked | 300 ms |
-| `unfinalizeEvent` | `(eventId) → void` | Clears slot/venue; status → `SELECTING_VENUE` (creator only) | 300 ms |
+| `unfinalizeEvent` | `(eventId) → void` | Clears slot/venue; status → `SCHEDULING` (creator only) | 300 ms |
 | `fetchVenues` | `(eventId) → Venue[]` | Returns 6 hardcoded venues | 700 ms |
 | `fetchCommonTimes` | `(eventId) → CommonTime[]` | Derives from `event.slotCounts`, returns sorted by date/hour | 400 ms |
 
@@ -1032,7 +1040,7 @@ Backend must:
 2. For each slot, increment `slotCounts["YYYY-MM-DD-HH"]` by 1. Key format: `date + "-" + startHour` (no zero-padding on hour).
 3. Add `userId` to `availabilitySubmittedBy[]` (idempotent — ignore if already present).
 4. **Transition check:** if `availabilitySubmittedBy.length >= participants.length`:
-   - Set `status = 'SELECTING_VENUE'`.
+   - Set `status = 'SCHEDULING'`.
    - Generate `ALL_SUBMITTED` notification for the creator.
 
 **Response `200`:** Updated `EventDetail`.
@@ -1051,7 +1059,7 @@ Backend must:
 
 Backend must:
 1. Validate caller is `creatorId`.
-2. Validate `status === 'SELECTING_VENUE'`.
+2. Validate `status === 'SCHEDULING'`.
 3. Resolve venue details from `venueId` and store as `selectedVenue`.
 4. Set `selectedTime` from `slot`.
 5. Reset `confirmedUserIds: []`, `declinedUserIds: []`.
@@ -1120,14 +1128,14 @@ Backend must:
 
 #### `POST /events/{eventId}/unfinalize` — Revert finalized event
 
-Creator-only. Reverts `FINALIZED` back to `SELECTING_VENUE`.
+Creator-only. Reverts `FINALIZED` back to `SCHEDULING`.
 
 Backend must:
 1. Validate caller is `creatorId`.
 2. Validate `status === 'FINALIZED'`.
 3. Clear `selectedTime` and `selectedVenue`.
 4. Reset `confirmedUserIds: []`, `declinedUserIds: []`.
-5. Set `status = 'SELECTING_VENUE'`.
+5. Set `status = 'SCHEDULING'`.
 
 **Response `200`:** Updated `EventDetail`.
 **Response `403`:** If caller is not creator.
@@ -1187,7 +1195,7 @@ The frontend currently generates notifications **client-side** from the event st
 ```
 
 **Backend generation rules:**
-1. `ALL_SUBMITTED`: for each `SELECTING_VENUE` event where `creatorId === userId`.
+1. `ALL_SUBMITTED`: for each `SCHEDULING` event where `creatorId === userId`.
 2. `ATTENDANCE_REQUEST`: for each `AWAITING_CONFIRMATION` event where `userId` is in `participants[]` but not in `confirmedUserIds` or `declinedUserIds`.
 3. `FRIEND_REQUEST`: one per pending incoming friend request for `userId`.
 4. `SUGGESTION`: interest-based recommendations (optional feature).
@@ -1202,7 +1210,7 @@ The notification bell in the global header shows a red badge with the count of *
 
 ```
 actionable count =
-  (number of SELECTING_VENUE events where creatorId === CURRENT_USER_ID)
+  (number of SCHEDULING events where creatorId === CURRENT_USER_ID)
   +
   (number of AWAITING_CONFIRMATION events where user is participant but hasn't responded)
 ```

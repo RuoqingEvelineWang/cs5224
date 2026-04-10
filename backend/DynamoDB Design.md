@@ -418,11 +418,11 @@ environment: {
 
 | # | API 端点 | DynamoDB 操作 | 说明 |
 |---|---|---|---|
-| 14 | `POST /events/:eventId/availability` | `UpdateItem(PK=EVENT#eid, SK=USER#uid, availableTimeSlots=..., hasSubmittedAvailability=true)` | 更新后检查所有成员是否已提交；若是则 `UpdateItem(PK=EVENT#eid, SK=METADATA, status=SELECTING_VENUE)` |
+| 14 | `POST /events/:eventId/availability` | `UpdateItem(PK=EVENT#eid, SK=USER#uid, availableTimeSlots=..., hasSubmittedAvailability=true)` | 更新后检查所有成员是否已提交；若是则 `UpdateItem(PK=EVENT#eid, SK=METADATA, status=SCHEDULING)` |
 | 15 | `POST /events/:eventId/finalize` | 验证 creator；`UpdateItem(PK=EVENT#eid, SK=METADATA, selectedTime=..., selectedVenue=..., status=AWAITING_CONFIRMATION)` | 同时将所有非 creator 的 EventMember.inviteStatus 重置为 PENDING |
 | 16 | `POST /events/:eventId/confirm` | `UpdateItem(PK=EVENT#eid, SK=USER#uid, inviteStatus=ACCEPTED)` | 更新后 Query 所有成员检查是否全部响应；若是则自动流转至 FINALIZED |
 | 17 | `POST /events/:eventId/decline` | `UpdateItem(PK=EVENT#eid, SK=USER#uid, inviteStatus=DECLINED)` | 同上，全部响应后流转至 FINALIZED |
-| 18 | `POST /events/:eventId/unfinalize` | 验证 creator；`UpdateItem` EventInfo（清除 selectedTime/selectedVenue，status→SELECTING_VENUE）+ `UpdateItem` × N 重置所有成员 inviteStatus→PENDING | 撤回定稿 |
+| 18 | `POST /events/:eventId/unfinalize` | 验证 creator；`UpdateItem` EventInfo（清除 selectedTime/selectedVenue，status→SCHEDULING）+ `UpdateItem` × N 重置所有成员 inviteStatus→PENDING | 撤回定稿 |
 
 ### 4.5 场地、Dashboard 与通知
 
@@ -446,10 +446,10 @@ environment: {
           所有参与者均提交后自动流转
                        │
                        ▼
-            SELECTING_VENUE
-         （创建者选择最终时间和场地）
+              SCHEDULING
+   （创建者查看时间投票结果，同时选定最终时间和场地）
                        │
-              创建者调用 finalize
+              创建者调用 finalize API
                        │
                        ▼
           AWAITING_CONFIRMATION
@@ -467,8 +467,8 @@ environment: {
 | 状态 | 触发条件 | 数据变化 |
 |---|---|---|
 | `COLLECTING_AVAILABILITY` | 创建活动时初始状态 | 所有 EventMember.inviteStatus = PENDING |
-| `SELECTING_VENUE` | 所有 EventMember.hasSubmittedAvailability = true | Lambda 检测后自动更新 EventInfo.status |
-| `AWAITING_CONFIRMATION` | Creator 调用 finalize API | EventInfo 写入 selectedTime + selectedVenue |
+| `SCHEDULING` | 所有 EventMember.hasSubmittedAvailability = true | Lambda 检测后自动更新 EventInfo.status |
+| `AWAITING_CONFIRMATION` | Creator 调用 finalize API | EventInfo 写入 selectedTime + selectedVenue，status → AWAITING_CONFIRMATION |
 | `FINALIZED` | 所有参与者均响应（confirm/decline） | 最终状态，不可再修改（除非 unfinalize） |
 
 ---
@@ -484,8 +484,8 @@ GET /notifications 的推导步骤：
 2. BatchGetItem 获取对应 EventInfo
 3. 遍历每个 (EventMember, EventInfo) 对：
 
-   a. 若 EventInfo.status = SELECTING_VENUE AND EventMember.role = CREATOR
-      → 推导 ALL_SUBMITTED 通知（所有人都提交了，创建者该选场地了）
+   a. 若 EventInfo.status = SCHEDULING AND EventMember.role = CREATOR
+      → 推导 ALL_SUBMITTED 通知（所有人都提交了，创建者该选定时间和场地了）
 
    b. 若 EventInfo.status = AWAITING_CONFIRMATION
       AND EventMember.role = PARTICIPANT
@@ -564,8 +564,8 @@ function computeSlotCounts(members) {
 
 ```javascript
 // Called after a member submits availability
-// Auto-transitions event to SELECTING_VENUE when all members have submitted
-async function checkAndAdvanceToSelectingVenue(eventId) {
+// Auto-transitions event to SCHEDULING when all members have submitted
+async function checkAndAdvanceToScheduling(eventId) {
   const members = await getEventMembers(eventId);
   const allSubmitted = members.every(m => m.hasSubmittedAvailability === true);
   if (allSubmitted) {
@@ -575,7 +575,7 @@ async function checkAndAdvanceToSelectingVenue(eventId) {
       UpdateExpression: 'SET #s = :status, updatedAt = :now',
       ExpressionAttributeNames: { '#s': 'status' },
       ExpressionAttributeValues: {
-        ':status': 'SELECTING_VENUE',
+        ':status': 'SCHEDULING',
         ':now': new Date().toISOString(),
       },
     }).promise();
