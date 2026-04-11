@@ -14,6 +14,47 @@
 │   │   │   ├── asset.4897ed27426849c3d2773135383692bbe8b5672787473bf5ce89878dad919273
 │   │   │   │   ├── index.js
 │   │   │   │   └── package.json
+│   │   │   ├── asset.4da3aa79adb41dc3714919358d2f7349d1ab0d7bf7a05fdf59bdc4e3d74f6b60
+│   │   │   │   ├── Testing.md
+│   │   │   │   ├── babel.config.json
+│   │   │   │   ├── coverage
+│   │   │   │   │   ├── lcov-report
+│   │   │   │   │   │   ├── base.css
+│   │   │   │   │   │   ├── block-navigation.js
+│   │   │   │   │   │   ├── createEvent.js.html
+│   │   │   │   │   │   ├── favicon.png
+│   │   │   │   │   │   ├── friendHandlers.js.html
+│   │   │   │   │   │   ├── getEventById.js.html
+│   │   │   │   │   │   ├── getEvents.js.html
+│   │   │   │   │   │   ├── getFriends.js.html
+│   │   │   │   │   │   ├── getRecommendations.js.html
+│   │   │   │   │   │   ├── index.html
+│   │   │   │   │   │   ├── prettify.css
+│   │   │   │   │   │   ├── prettify.js
+│   │   │   │   │   │   ├── sort-arrow-sprite.png
+│   │   │   │   │   │   ├── sorter.js
+│   │   │   │   │   │   ├── testGetRecommendations.js.html
+│   │   │   │   │   │   └── userHandlers.js.html
+│   │   │   │   │   └── lcov.info
+│   │   │   │   ├── handlers
+│   │   │   │   │   ├── createEvent.js
+│   │   │   │   │   ├── createEvent.test.js
+│   │   │   │   │   ├── friendHandlers.js
+│   │   │   │   │   ├── friendHandlers.test.js
+│   │   │   │   │   ├── getEventById.js
+│   │   │   │   │   ├── getEvents.js
+│   │   │   │   │   ├── getEvents_getEventById.test.js
+│   │   │   │   │   ├── getFriends.js
+│   │   │   │   │   ├── getFriends_getRecommendations.test.js
+│   │   │   │   │   ├── getRecommendations.js
+│   │   │   │   │   ├── testGetRecommendations.js
+│   │   │   │   │   ├── userHandlers.js
+│   │   │   │   │   └── userHandlers.test.js
+│   │   │   │   ├── index.js
+│   │   │   │   ├── jest.setup.afterFramework.js
+│   │   │   │   ├── jest.setup.js
+│   │   │   │   ├── package-lock.json
+│   │   │   │   └── package.json
 │   │   │   ├── cdk.out
 │   │   │   ├── manifest.json
 │   │   │   └── tree.json
@@ -31,18 +72,53 @@
 │   │   │   └── cdk.test.ts
 │   │   └── tsconfig.json
 │   ├── lambda
+│   │   ├── Testing.md
+│   │   ├── babel.config.json
+│   │   ├── coverage
+│   │   │   ├── lcov-report
+│   │   │   │   ├── base.css
+│   │   │   │   ├── block-navigation.js
+│   │   │   │   ├── createEvent.js.html
+│   │   │   │   ├── favicon.png
+│   │   │   │   ├── friendHandlers.js.html
+│   │   │   │   ├── getEventById.js.html
+│   │   │   │   ├── getEvents.js.html
+│   │   │   │   ├── getFriends.js.html
+│   │   │   │   ├── getRecommendations.js.html
+│   │   │   │   ├── index.html
+│   │   │   │   ├── prettify.css
+│   │   │   │   ├── prettify.js
+│   │   │   │   ├── sort-arrow-sprite.png
+│   │   │   │   ├── sorter.js
+│   │   │   │   ├── testGetRecommendations.js.html
+│   │   │   │   └── userHandlers.js.html
+│   │   │   └── lcov.info
 │   │   ├── handlers
+│   │   │   ├── confirmAttendance.js
 │   │   │   ├── createEvent.js
+│   │   │   ├── createEvent.test.js
+│   │   │   ├── declineAttendance.js
+│   │   │   ├── finalizeEvent.js
 │   │   │   ├── friendHandlers.js
 │   │   │   ├── friendHandlers.test.js
 │   │   │   ├── getEventById.js
 │   │   │   ├── getEvents.js
+│   │   │   ├── getEvents_getEventById.test.js
 │   │   │   ├── getFriends.js
+│   │   │   ├── getFriends_getRecommendations.test.js
+│   │   │   ├── getNotifications.js
 │   │   │   ├── getRecommendations.js
+│   │   │   ├── getTimeRecommendations.js
+│   │   │   ├── getVenues.js
+│   │   │   ├── leaveEvent.js
+│   │   │   ├── submitAvailability.js
 │   │   │   ├── testGetRecommendations.js
+│   │   │   ├── unfinalizeEvent.js
 │   │   │   ├── userHandlers.js
 │   │   │   └── userHandlers.test.js
 │   │   ├── index.js
+│   │   ├── jest.setup.afterFramework.js
+│   │   ├── jest.setup.js
 │   │   ├── package-lock.json
 │   │   └── package.json
 │   └── package-lock.json
@@ -54,6 +130,7 @@
 │   ├── index.html
 │   ├── package-lock.json
 │   ├── package.json
+│   ├── playwright.config.ts
 │   ├── public
 │   │   └── vite.svg
 │   ├── src
@@ -82,11 +159,34 @@
 │   │   │   └── ProfilePage.tsx
 │   │   └── types
 │   │       └── event.ts
+│   ├── tests
+│   │   └── e2e
+│   │       ├── auth.spec.ts
+│   │       ├── dashboard.spec.ts
+│   │       ├── events.spec.ts
+│   │       ├── friends.spec.ts
+│   │       ├── global.setup.ts
+│   │       └── onboarding.spec.ts
 │   ├── tsconfig.app.json
 │   ├── tsconfig.json
 │   ├── tsconfig.node.json
 │   ├── vite-env.d.ts
 │   └── vite.config.ts
+├── performance_tests
+│   ├── Testing.md
+│   ├── baseline_test.js
+│   ├── chart_baseline_comparison.png
+│   ├── chart_cold_start_comparison.png
+│   ├── chart_error_rate_over_time.png
+│   ├── chart_response_time_distribution.png
+│   ├── chart_throughput_over_time.png
+│   ├── cold_start_test.js
+│   ├── generate_charts.py
+│   ├── get_token.js
+│   ├── load_monitor.png
+│   ├── load_results.json
+│   ├── load_test.js
+│   └── token.txt
 └── project_structure.txt
 
-18 directories, 72 files
+27 directories, 163 files

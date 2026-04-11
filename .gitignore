@@ -20,3 +20,5 @@ backend/cdk/cdk-outputs*.json
 
 # Local docs/plans (not for GitHub)
 doc/
+performance_tests/token.txt
+project_structure.txt
