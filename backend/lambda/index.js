@@ -6,6 +6,8 @@ import { getFriends } from "./handlers/getFriends.js";
 import { createEvent } from "./handlers/createEvent.js";
 import { getMyProfile, upsertMyProfile, geocodePostalCode } from "./handlers/userHandlers.js";
 import { submitAvailability } from "./handlers/submitAvailability.js";
+import { getTimeRecommendations } from "./handlers/getTimeRecommendations.js";
+import { leaveEvent } from "./handlers/leaveEvent.js";
 import { finalizeEvent } from "./handlers/finalizeEvent.js";
 import { confirmAttendance } from "./handlers/confirmAttendance.js";
 import { declineAttendance } from "./handlers/declineAttendance.js";
@@ -17,6 +19,7 @@ import {
   listFriendsByUserId,
   listFriendSuggestions,
 } from "./handlers/friendHandlers.js";
+import { getNotifications, markNotificationsRead, deleteNotification } from "./handlers/getNotifications.js";
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
@@ -104,6 +107,17 @@ export const handler = async (event) => {
       return respond(200, { data, error: null });
     }
 
+    if (method === "GET" && (resource === "/events/{id}/time-recommendations" || /^\/events\/[^/]+\/time-recommendations$/.test(path))) {
+      const eventId = event?.pathParameters?.id || path.split("/")[2];
+      if (!eventId) throw new HttpError(400, "Missing event id.");
+      const data = await getTimeRecommendations(userId, eventId, docClient);
+      return respond(200, { data, error: null });
+    }
+
+    if (method === "POST" && (resource === "/events/{id}/leave" || /^\/events\/[^/]+\/leave$/.test(path))) {
+      const eventId = event?.pathParameters?.id || path.split("/")[2];
+      if (!eventId) throw new HttpError(400, "Missing event id.");
+      const data = await leaveEvent(userId, eventId, docClient);
     if (method === "POST" && (resource === "/events/{id}/finalize" || /^\/events\/[^/]+\/finalize$/.test(path))) {
       const eventId = event?.pathParameters?.id || path.split("/")[2];
       if (!eventId) throw new HttpError(400, "Missing event id.");
@@ -169,6 +183,23 @@ export const handler = async (event) => {
       assertSelfAccess(requestedUserId, userId);
 
       const data = await listFriendsByUserId(requestedUserId, docClient);
+      return respond(200, data);
+    }
+
+    if (isRoute(method, resource, path, "GET", "/notifications")) {
+      const data = await getNotifications(userId, docClient);
+      return respond(200, { data, error: null });
+    }
+
+    if (isRoute(method, resource, path, "PUT", "/notifications/read")) {
+      const body = parseJsonBody(event);
+      const data = await markNotificationsRead(userId, body.notificationIds, docClient);
+      return respond(200, data);
+    }
+
+    if (method === "PUT" && (resource === "/notifications/{notificationId}" || /^\/notifications\/[^/]+$/.test(path))) {
+      const notificationId = event?.pathParameters?.notificationId || path.split("/").pop();
+      const data = await deleteNotification(userId, notificationId, docClient);
       return respond(200, data);
     }
 

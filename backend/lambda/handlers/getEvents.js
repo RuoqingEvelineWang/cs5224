@@ -14,11 +14,13 @@ export async function getEvents(userId, docClient) {
     }
   }));
 
-  if (!memberRes.Items || memberRes.Items.length === 0) return [];
+  // Filter out events the user has LEFT
+  const activeItems = (memberRes.Items || []).filter(item => item.memberStatus !== 'LEFT');
+  if (activeItems.length === 0) return [];
 
   // STEP 2: BatchGet the Event Metadata
-  const eventKeys = memberRes.Items.map(item => ({
-    PK: item.PK, 
+  const eventKeys = activeItems.map(item => ({
+    PK: item.PK,
     SK: 'METADATA'
   }));
 
@@ -41,7 +43,7 @@ export async function getEvents(userId, docClient) {
       }
     }));
     
-    const members = allMembersRes.Items || [];
+    const members = (allMembersRes.Items || []).filter(m => m.memberStatus !== 'LEFT');
     const rawEventId = eventMeta.PK.replace('EVENT#', '');
     const derivedCreatorId = eventMeta.creatorId || members.find(m => m.role === 'CREATOR')?.userId?.replace('USER#', '') || members.find(m => m.role === 'CREATOR')?.SK?.replace('USER#', '');
 

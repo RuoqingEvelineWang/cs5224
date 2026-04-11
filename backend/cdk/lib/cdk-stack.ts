@@ -128,6 +128,13 @@ export class CdkStack extends cdk.Stack {
     const availabilityResource = singleEventResource.addResource('availability');
     availabilityResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
 
+    // GET /events/{id}/time-recommendations
+    const timeRecommendationsResource = singleEventResource.addResource('time-recommendations');
+    timeRecommendationsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/leave
+    const leaveResource = singleEventResource.addResource('leave');
+    leaveResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
     // POST /events/{id}/finalize  — creator locks in time + venue → AWAITING_CONFIRMATION
     const finalizeResource = singleEventResource.addResource('finalize');
     finalizeResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
@@ -173,6 +180,14 @@ export class CdkStack extends cdk.Stack {
 
     const friendSuggestionsResource = friendsResource.addResource('suggestions').addResource('{userId}');
     friendSuggestionsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
+    // Notifications routes
+    const notificationsResource = api.root.addResource('notifications');
+    notificationsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+    const notificationsReadResource = notificationsResource.addResource('read');
+    notificationsReadResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
+    const singleNotificationResource = notificationsResource.addResource('{notificationId}');
+    singleNotificationResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
 
     // Output the Table Name for reference
     new cdk.CfnOutput(this, 'MainTableName', {

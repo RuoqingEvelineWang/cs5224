@@ -347,6 +347,7 @@ environment: {
 | `inviteStatus` | String | 是 | `PENDING` / `ACCEPTED` / `DECLINED` |
 | `hasSubmittedAvailability` | Boolean | 是 | 是否已提交可用时间（初始值 `false`） |
 | `availableTimeSlots` | List\<String\> | 否 | 可用时间段列表，格式 `"YYYY-MM-DD-HH"`，如 `["2026-04-15-14", "2026-04-15-15"]` |
+| `memberStatus` | String | 否 | `"LEFT"` 表示参与者已退出（COLLECTING_AVAILABILITY / SCHEDULING 阶段）；不存在时视为活跃成员。所有读取成员列表的查询需过滤 `memberStatus ≠ LEFT` |
 | `GSI1PK` | String | 是 | `USER#<userId>` |
 | `GSI1SK` | String | 是 | `EVENT#<eventId>` |
 | `createdAt` | String | 是 | ISO 8601 |
@@ -377,6 +378,66 @@ environment: {
   "updatedAt": "2026-04-10T08:30:00Z"
 }
 ```
+
+---
+
+### 3.5 Notification（通知）
+
+通知在触发时主动写入存储，isRead 字段直接存在 item 上，支持未读/已读状态查询。
+
+**触发时机：**
+
+| notifType | 触发位置 | notificationId 格式 |
+|---|---|---|
+| `FRIEND_REQUEST` | `POST /friends/request` 成功后 | `FRIEND_REQUEST#<senderId>` |
+| `ALL_SUBMITTED` | `POST /events/:id/availability` 所有成员均提交后 | `ALL_SUBMITTED#<eventId>` |
+| `ATTENDANCE_REQUEST` | `POST /events/:id/finalize`（待实现） | `ATTENDANCE_REQUEST#<eventId>` |
+
+**键设计：**
+
+| 键 | 值 | 说明 |
+|---|---|---|
+| `PK` | `USER#<userId>` | 通知接收者 |
+| `SK` | `NOTIF#<notificationId>` | 通知唯一标识，确保同类通知不重复 |
+
+**字段列表：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `PK` | String | 是 | `USER#<userId>` |
+| `SK` | String | 是 | `NOTIF#<notificationId>` |
+| `Type` | String | 是 | 固定值 `"Notification"` |
+| `userId` | String | 是 | 冗余存储接收者 ID |
+| `notificationId` | String | 是 | 确定性 ID，如 `FRIEND_REQUEST#user-alice` |
+| `notifType` | String | 是 | `FRIEND_REQUEST` / `ALL_SUBMITTED` / `ATTENDANCE_REQUEST` |
+| `message` | String | 是 | 展示给用户的通知文案 |
+| `isRead` | Boolean | 是 | 初始值 `false`，调用 `PUT /notifications/read` 后更新为 `true` |
+| `payload` | Map | 是 | 类型相关的附加数据（如 eventId、eventTitle、fromUserId） |
+| `createdAt` | String | 是 | ISO 8601 |
+| `updatedAt` | String | 是 | ISO 8601 |
+| `readAt` | String | 否 | 标记为已读的时间，初始不存在 |
+| `isDeleted` | Boolean | 否 | 用户主动删除标记（`PUT /notifications/{id}`）；`GET /notifications` 自动过滤 |
+| `deletedAt` | String | 否 | 用户删除时间，初始不存在 |
+
+**JSON 示例：**
+
+```json
+{
+  "PK": "USER#user-bob",
+  "SK": "NOTIF#FRIEND_REQUEST#user-alice",
+  "Type": "Notification",
+  "userId": "user-bob",
+  "notificationId": "FRIEND_REQUEST#user-alice",
+  "notifType": "FRIEND_REQUEST",
+  "message": "Alice sent you a friend request.",
+  "isRead": false,
+  "payload": { "fromUserId": "user-alice", "fromUserName": "Alice" },
+  "createdAt": "2026-04-10T09:00:00Z",
+  "updatedAt": "2026-04-10T09:00:00Z"
+}
+```
+
+> **设计说明：** `notificationId` 使用确定性格式，相同 notificationId 的重复写入会直接覆盖旧通知（isRead 重置为 false）。防重由调用方负责（如 submitAvailability 通过 ConditionExpression 保证单次调用）。
 
 ---
 
@@ -423,6 +484,7 @@ environment: {
 | 16 | `POST /events/:eventId/confirm` | `UpdateItem(PK=EVENT#eid, SK=USER#uid, inviteStatus=ACCEPTED)` | 更新后 Query 所有成员检查是否全部响应；若是则自动流转至 FINALIZED |
 | 17 | `POST /events/:eventId/decline` | `UpdateItem(PK=EVENT#eid, SK=USER#uid, inviteStatus=DECLINED)` | 同上，全部响应后流转至 FINALIZED |
 | 18 | `POST /events/:eventId/unfinalize` | 验证 creator；`UpdateItem` EventInfo（清除 selectedTime/selectedVenue，status→SCHEDULING）+ `UpdateItem` × N 重置所有成员 inviteStatus→PENDING | 撤回定稿 |
+| 24 | `POST /events/:eventId/leave` | COLLECTING/SCHEDULING: `UpdateItem(PK=EVENT#eid, SK=USER#uid, memberStatus=LEFT)`；AWAITING/FINALIZED: `UpdateItem(inviteStatus=DECLINED)` | PARTICIPANT only；COLLECTING 阶段离开后若剩余成员均已提交则自动推进 SCHEDULING；AWAITING 阶段离开后若全员响应则推进 FINALIZED |
 
 ### 4.5 场地、Dashboard 与通知
 
@@ -430,7 +492,9 @@ environment: {
 |---|---|---|---|
 | 19 | `GET /events/:eventId/venues` | `Query(PK=EVENT#eid, SK begins_with USER#)` 获取所有成员 + `BatchGetItem` UserProfile 取 approxArea/transportType | Lambda 计算地理中心，返回静态/外部 API 场地列表 |
 | 20 | `GET /dashboard` | `Query(GSI1, GSI1PK=USER#uid)` → `BatchGetItem` EventInfo | Lambda 过滤：upcomingEvents（活跃活动取前3）+ pendingInvites（inviteStatus=PENDING 且 status=COLLECTING_AVAILABILITY） |
-| 21 | `GET /notifications` | `Query(GSI1, GSI1PK=USER#uid)` → `BatchGetItem` EventInfo + `Query(PK=USER#uid, SK begins_with FRIEND#)` filter PENDING | Lambda 推导通知（见下文），无独立 Notification 表 |
+| 21 | `GET /notifications` | `Query(PK=USER#uid, SK begins_with NOTIF#)`，过滤 `isDeleted ≠ true` | 读取存储的 Notification items，按 createdAt 降序 |
+| 22 | `PUT /notifications/read` | `UpdateItem(PK=USER#uid, SK=NOTIF#<id>, isRead=true, readAt=now)` × N | 批量标记已读，item 不存在时静默跳过 |
+| 23 | `PUT /notifications/{notificationId}` | `UpdateItem(PK=USER#uid, SK=NOTIF#<id>, isDeleted=true, deletedAt=now)` | 软删除，item 保留在库中；不存在时返回 404 |
 
 ---
 
@@ -473,29 +537,45 @@ environment: {
 
 ---
 
-## 六、通知推导逻辑（Notifications）
+## 六、通知存储与触发逻辑（Notifications）
 
-**通知不存储为独立 Item**，由 Lambda 在 `GET /notifications` 时实时推导：
+通知在业务事件触发时**主动写入** DynamoDB（见 3.5 节），`GET /notifications` 直接查询存储结果。
+
+**触发点汇总：**
 
 ```
-GET /notifications 的推导步骤：
+触发点 1：POST /friends/request（sendFriendRequest handler）
+  → 写入 FRIEND_REQUEST 通知给 targetUser
+  → notificationId: FRIEND_REQUEST#<senderId>
 
-1. Query GSI1 (GSI1PK=USER#uid) → 获取用户所有 EventMember 记录
-2. BatchGetItem 获取对应 EventInfo
-3. 遍历每个 (EventMember, EventInfo) 对：
+触发点 2：POST /events/:id/availability（submitAvailability handler）
+  → 当所有成员均提交后，写入 ALL_SUBMITTED 通知给 event creator
+  → notificationId: ALL_SUBMITTED#<eventId>
 
-   a. 若 EventInfo.status = SCHEDULING AND EventMember.role = CREATOR
-      → 推导 ALL_SUBMITTED 通知（所有人都提交了，创建者该选定时间和场地了）
-
-   b. 若 EventInfo.status = AWAITING_CONFIRMATION
-      AND EventMember.role = PARTICIPANT
-      AND EventMember.inviteStatus = PENDING
-      → 推导 ATTENDANCE_REQUEST 通知（需要确认/拒绝出席）
-
-4. Query 主表 (PK=USER#uid, SK begins_with FRIEND#)
-   过滤 status=PENDING AND requestedBy ≠ uid
-   → 推导 FRIEND_REQUEST 通知
+触发点 3：POST /events/:id/finalize（待实现）
+  → 写入 ATTENDANCE_REQUEST 通知给每位 PARTICIPANT
+  → notificationId: ATTENDANCE_REQUEST#<eventId>
 ```
+
+**API 行为：**
+
+```
+GET /notifications
+  → Query(PK=USER#uid, SK begins_with NOTIF#)
+  → 过滤 isDeleted=true 的 item
+  → 按 createdAt 降序返回
+
+PUT /notifications/read  body: { notificationIds: string[] }
+  → UpdateItem 批量设置 isRead=true, readAt=now
+
+PUT /notifications/{notificationId}
+  → UpdateItem 设置 isDeleted=true, deletedAt=now（用户软删除）
+  → item 保留在库中，不在列表中展示
+```
+
+> **覆盖机制：** `createNotification` 使用无条件 PutItem，相同 notificationId 的重复触发会覆盖旧通知（isRead 重置为 false）。防重由调用方负责（如 submitAvailability 通过 ConditionExpression 保证单次调用）。
+>
+> **竞态保护（ALL_SUBMITTED）：** `submitAvailability` 在更新成员记录后使用 ConsistentRead 重新查询所有成员的最新状态（而非使用请求开始时的快照），并在推进 `status → SCHEDULING` 时加 `ConditionExpression: status = COLLECTING_AVAILABILITY`，保证并发提交时只有一方成功推进，另一方静默忽略。
 
 ---
 

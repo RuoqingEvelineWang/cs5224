@@ -1,4 +1,5 @@
 import { UpdateCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { createNotification } from "./getNotifications.js";
 
 const TABLE_NAME = process.env.MAIN_TABLE;
 
@@ -54,7 +55,7 @@ export async function submitAvailability(userId, eventId, body, docClient) {
     throw new HttpError(404, "Event metadata not found.");
   }
 
-  const members = items.filter(i => i.SK.startsWith("USER#"));
+  const members = items.filter(i => i.SK.startsWith("USER#") && i.memberStatus !== "LEFT");
 
   // 2. Check the requesting user is a member
   const myMember = members.find(m => m.SK === `USER#${userId}`);
@@ -85,26 +86,60 @@ export async function submitAvailability(userId, eventId, body, docClient) {
     },
   }));
 
-  // 5. Check if all members have now submitted
-  const updatedMembers = members.map(m =>
-    m.SK === `USER#${userId}` ? { ...m, hasSubmittedAvailability: true } : m
-  );
-  const allSubmitted = updatedMembers.every(m => m.hasSubmittedAvailability === true);
+  // 5. Re-query all members to get the latest hasSubmittedAvailability state,
+  //    avoiding the race condition where two concurrent submissions both see
+  //    the other as not-yet-submitted and neither advances the event status.
+  const freshRes = await docClient.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    ConsistentRead: true,
+    KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
+    ExpressionAttributeValues: {
+      ":pk": `EVENT#${eventId}`,
+      ":skPrefix": "USER#",
+    },
+  }));
+  const freshMembers = (freshRes.Items || []).filter(m => m.memberStatus !== "LEFT");
+  const allSubmitted = freshMembers.length > 0
+    && freshMembers.every(m => m.hasSubmittedAvailability === true);
 
   if (allSubmitted) {
-    await docClient.send(new UpdateCommand({
-      TableName: TABLE_NAME,
-      Key: {
-        PK: `EVENT#${eventId}`,
-        SK: "METADATA",
-      },
-      UpdateExpression: "SET #s = :status, updatedAt = :now",
-      ExpressionAttributeNames: { "#s": "status" },
-      ExpressionAttributeValues: {
-        ":status": "SCHEDULING",
-        ":now": now,
-      },
-    }));
+    // ConditionExpression ensures only one concurrent winner advances the status.
+    // The notification is sent only by the winner, preventing duplicate delivery
+    // and avoiding a second write that would reset isRead=false on the creator's notification.
+    let advancedStatus = false;
+    try {
+      await docClient.send(new UpdateCommand({
+        TableName: TABLE_NAME,
+        Key: {
+          PK: `EVENT#${eventId}`,
+          SK: "METADATA",
+        },
+        UpdateExpression: "SET #s = :status, updatedAt = :now",
+        ExpressionAttributeNames: { "#s": "status" },
+        ExpressionAttributeValues: {
+          ":status": "SCHEDULING",
+          ":collecting": "COLLECTING_AVAILABILITY",
+          ":now": now,
+        },
+        ConditionExpression: "#s = :collecting",
+      }));
+      advancedStatus = true;
+    } catch (err) {
+      if (err?.name !== "ConditionalCheckFailedException") throw err;
+      // Another concurrent submission already advanced the status — that's fine.
+    }
+
+    // Only the request that won the status transition sends the notification,
+    // ensuring exactly-once delivery.
+    if (advancedStatus) {
+      await createNotification(docClient, {
+        recipientUserId: eventMeta.creatorId,
+        notifType: "ALL_SUBMITTED",
+        notificationId: `ALL_SUBMITTED#${eventId}`,
+        message: `All participants have submitted their availability for "${eventMeta.title}". Time to pick a time and venue!`,
+        payload: { eventId, eventTitle: eventMeta.title },
+      });
+    }
   }
 
   return {
