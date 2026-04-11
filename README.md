@@ -100,7 +100,7 @@ If no stage is provided, `cdk-stack.ts` defaults to `dev`.
 ## Testing Strategies and Outcomes
 ### Unit Test
 
-See the [Unit Test](backend/lambda/TESTING.md) for setup and usage instructions, and the latest coverage report.
+See the [Unit Test](/backend/lambda/TESTING.md) for setup and usage instructions, and the latest coverage report.
 
 ### Performance Test
-See the [Performance Test Results](performance_tests/TESTING.md) for setup and usage instructions, and performace testing report.
+See the [Performance Test Results](/performance_tests/TESTING.md) for setup and usage instructions, and performace testing report.
