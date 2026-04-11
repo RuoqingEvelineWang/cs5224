@@ -57,8 +57,24 @@ If no stage is provided, `cdk-stack.ts` defaults to `dev`.
    - dev: `npx cdk deploy -c stage=dev`
    - prod: `npx cdk deploy -c stage=prod`
 5. After deployment, CDK outputs values such as `UserPoolId`, `UserPoolClientId`, and `ApiUrl`. Copy the required values into the frontend `.env` file for authentication and API access.
-6. Run this command inside **/backend/cdk** to fill test data for dynamoDB:
-   - `npm run seed`
+6. Run this command inside **/backend/cdk** to fill test data for DynamoDB:
+   - `DEMO_USER_ID=<your-cognito-user-id> npm run seed`
+   - Replace `<your-cognito-user-id>` with your actual Cognito user ID (find it in the AWS Console under Cognito → User Pools → Users, or from the JWT token after signing in).
+   - The test dataset covers every feature. Each item is labelled with `[TEST: ...]` so you can find the right event or friend directly in the UI:
+
+   | Where to look | What to test |
+   |---|---|
+   | Friends page → Accepted Friends | Bob (Accepted Friend), Charlie (Accepted Friend) |
+   | Friends page → Incoming Requests | Evan (Incoming Request) → accept or decline |
+   | Friends page → Outgoing Requests | Diana (Outgoing Request) |
+   | Friends page → Suggestions | Fiona (Friend Suggestion) — shares interests with you |
+   | Event: [TEST: Submit Availability] Weekend Hike | You are a participant who hasn't submitted yet — drag to select time slots |
+   | Event: [TEST: Pick Time & Venue] Japanese Dinner | You are the creator — view recommendations, pick a slot and venue, then finalize |
+   | Event: [TEST: Confirm or Decline] Board Game Night | You are a participant — confirm or decline attendance |
+   | Event: [TEST: View Finalized Event] Badminton Session | Fully confirmed — read-only detail view |
+   | Event: [TEST: Unfinalize] Camping Trip | You are the creator — click Unfinalize to revert back to scheduling |
+   | Event: [TEST: Leave Event] Book Club | You are a participant — click Leave Event |
+   | Notifications | 4 notifications covering all types (friend request, all submitted, RSVP, finalized) |
 7. Run the following command inside **/frontend** to install dependencies strictly according to `package-lock.json`:
    - `npm ci`
 8. Run the following command inside **/frontend** to start front end and get url:
@@ -70,7 +86,8 @@ If no stage is provided, `cdk-stack.ts` defaults to `dev`.
    - `npx cdk deploy -c stage=prod` for the production/demo environment
    Some infrastructure changes may require recreating resources.
 2. If test data is needed, refill data using the same command in **/backend/cdk**:
-   - `npm run seed`
+   - `DEMO_USER_ID=<your-cognito-user-id> npm run seed`
+   - To clear all existing data first: `npm run db:clear`
 3. If you update `backend/cdk/lib/cdk-stack.ts`, mention in your PR whether the change affects:
    - DynamoDB table names or indexes
    - Lambda environment variables
