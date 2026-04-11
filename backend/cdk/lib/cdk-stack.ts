@@ -135,6 +135,21 @@ export class CdkStack extends cdk.Stack {
     // POST /events/{id}/leave
     const leaveResource = singleEventResource.addResource('leave');
     leaveResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+    // POST /events/{id}/finalize  — creator locks in time + venue → AWAITING_CONFIRMATION
+    const finalizeResource = singleEventResource.addResource('finalize');
+    finalizeResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/confirm  — participant confirms attendance
+    const confirmResource = singleEventResource.addResource('confirm');
+    confirmResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/decline  — participant declines attendance
+    const declineResource = singleEventResource.addResource('decline');
+    declineResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/unfinalize  — creator reverts back to SCHEDULING
+    const unfinalizeResource = singleEventResource.addResource('unfinalize');
+    unfinalizeResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
 
     // Geocode route
     const geocodeResource = api.root.addResource('geocode');

@@ -61,6 +61,7 @@ export async function getEventById(userId, eventId, docClient) {
 
   return {
     ...eventDetail,
+    slotCounts: computeSlotCounts(members),
     creatorName: userMap[eventDetail.creatorId] || 'Creator',
     participants: eventDetail.participants.map(p => ({
       ...p,

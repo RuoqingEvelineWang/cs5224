@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { fetchAuthSession } from 'aws-amplify/auth';
 import { fetchNotifications } from '../api/eventService';
-import { confirmAttendance, declineAttendance } from '../api/Event.tsx';
 import type { NotificationItem } from '../types/event';
 
 const KIND_ICONS: Record<NotificationItem['kind'], string> = {
@@ -48,19 +48,41 @@ export default function NotificationsPage({
   async function handleConfirm(notif: NotificationItem) {
     if (!notif.eventId) return;
     setActioningId(notif.id);
-    await confirmAttendance(notif.eventId);
-    setActioned(prev => new Set([...prev, notif.id]));
-    setActioningId(null);
-    onActionComplete();
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+      await fetch(`${apiUrl}/events/${notif.eventId}/confirm`, {
+        method: 'POST',
+        headers: { 'Authorization': token || '', 'Content-Type': 'application/json' },
+      });
+    } catch (err) {
+      console.error("Failed to confirm attendance:", err);
+    } finally {
+      setActioned(prev => new Set([...prev, notif.id]));
+      setActioningId(null);
+      onActionComplete();
+    }
   }
 
   async function handleDecline(notif: NotificationItem) {
     if (!notif.eventId) return;
     setActioningId(notif.id);
-    await declineAttendance(notif.eventId);
-    setActioned(prev => new Set([...prev, notif.id]));
-    setActioningId(null);
-    onActionComplete();
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+      await fetch(`${apiUrl}/events/${notif.eventId}/decline`, {
+        method: 'POST',
+        headers: { 'Authorization': token || '', 'Content-Type': 'application/json' },
+      });
+    } catch (err) {
+      console.error("Failed to decline attendance:", err);
+    } finally {
+      setActioned(prev => new Set([...prev, notif.id]));
+      setActioningId(null);
+      onActionComplete();
+    }
   }
 
   if (loading) {

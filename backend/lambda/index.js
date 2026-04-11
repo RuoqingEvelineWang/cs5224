@@ -8,6 +8,10 @@ import { getMyProfile, upsertMyProfile, geocodePostalCode } from "./handlers/use
 import { submitAvailability } from "./handlers/submitAvailability.js";
 import { getTimeRecommendations } from "./handlers/getTimeRecommendations.js";
 import { leaveEvent } from "./handlers/leaveEvent.js";
+import { finalizeEvent } from "./handlers/finalizeEvent.js";
+import { confirmAttendance } from "./handlers/confirmAttendance.js";
+import { declineAttendance } from "./handlers/declineAttendance.js";
+import { unfinalizeEvent } from "./handlers/unfinalizeEvent.js";
 import {
   sendFriendRequest,
   acceptFriendRequest,
@@ -114,6 +118,32 @@ export const handler = async (event) => {
       const eventId = event?.pathParameters?.id || path.split("/")[2];
       if (!eventId) throw new HttpError(400, "Missing event id.");
       const data = await leaveEvent(userId, eventId, docClient);
+    if (method === "POST" && (resource === "/events/{id}/finalize" || /^\/events\/[^/]+\/finalize$/.test(path))) {
+      const eventId = event?.pathParameters?.id || path.split("/")[2];
+      if (!eventId) throw new HttpError(400, "Missing event id.");
+      const body = parseJsonBody(event);
+      const data = await finalizeEvent(userId, eventId, body, docClient);
+      return respond(200, { data, error: null });
+    }
+
+    if (method === "POST" && (resource === "/events/{id}/confirm" || /^\/events\/[^/]+\/confirm$/.test(path))) {
+      const eventId = event?.pathParameters?.id || path.split("/")[2];
+      if (!eventId) throw new HttpError(400, "Missing event id.");
+      const data = await confirmAttendance(userId, eventId, docClient);
+      return respond(200, { data, error: null });
+    }
+
+    if (method === "POST" && (resource === "/events/{id}/decline" || /^\/events\/[^/]+\/decline$/.test(path))) {
+      const eventId = event?.pathParameters?.id || path.split("/")[2];
+      if (!eventId) throw new HttpError(400, "Missing event id.");
+      const data = await declineAttendance(userId, eventId, docClient);
+      return respond(200, { data, error: null });
+    }
+
+    if (method === "POST" && (resource === "/events/{id}/unfinalize" || /^\/events\/[^/]+\/unfinalize$/.test(path))) {
+      const eventId = event?.pathParameters?.id || path.split("/")[2];
+      if (!eventId) throw new HttpError(400, "Missing event id.");
+      const data = await unfinalizeEvent(userId, eventId, docClient);
       return respond(200, { data, error: null });
     }
 
