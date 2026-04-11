@@ -6,7 +6,7 @@ const STAGE = process.env.STAGE || 'dev';
 const VENUE_CACHE_TTL_SECONDS = 86400; // 24 hours
 const SEARCH_RADIUS_METERS = 3000;
 const MAX_VENUES = 10;
-const DEDUP_MIN_DISTANCE_METERS = 400;
+const DEDUP_MIN_DISTANCE_METERS = 120;
 
 const ssmClient = new SSMClient({});
 
