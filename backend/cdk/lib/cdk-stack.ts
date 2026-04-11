@@ -120,7 +120,10 @@ export class CdkStack extends cdk.Stack {
         allowHeaders: ['Authorization', 'Content-Type'],
       },
     });
-    const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda);
+    const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda, {
+      allowTestInvoke: false,
+      scopePermissionToMethod: false,
+    });
     const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
       cognitoUserPools: [userPool]
     });
