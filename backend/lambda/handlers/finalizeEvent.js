@@ -1,4 +1,5 @@
 import { QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { createNotification } from "./getNotifications.js";
 
 const TABLE_NAME = process.env.MAIN_TABLE;
 
@@ -17,7 +18,9 @@ class HttpError extends Error {
  *
  * 1. Validates the caller is the event creator and status is SCHEDULING.
  * 2. Writes selectedTime + selectedVenue to EventInfo and advances status → AWAITING_CONFIRMATION.
- * 3. Resets all non-creator EventMember.inviteStatus → PENDING so each participant can RSVP fresh.
+ * 3. Resets all non-creator, non-LEFT EventMember.inviteStatus → PENDING so each active
+ *    participant can RSVP fresh.
+ * 4. Sends ATTENDANCE_REQUEST notifications to each active (non-LEFT) non-creator member.
  */
 export async function finalizeEvent(userId, eventId, body, docClient) {
   if (!TABLE_NAME) throw new HttpError(500, "MAIN_TABLE environment variable is not configured.");
@@ -72,7 +75,7 @@ export async function finalizeEvent(userId, eventId, body, docClient) {
   }));
 
   // 5a. Explicitly confirm the creator's attendance — finalizing IS an implicit RSVP yes.
-  //     This also fixes re-finalize after unfinalize: unfinalizeEvent resets ALL members
+  //     This also fixes re-finalize after unfinalize: unfinalizeEvent resets ALL active members
   //     (including the creator) to PENDING, so we must write ACCEPTED back here.
   await docClient.send(new UpdateCommand({
     TableName: TABLE_NAME,
@@ -81,9 +84,11 @@ export async function finalizeEvent(userId, eventId, body, docClient) {
     ExpressionAttributeValues: { ":accepted": "ACCEPTED", ":now": now },
   }));
 
-  // 5b. Reset every OTHER member's inviteStatus → PENDING so they can RSVP fresh
-  const nonCreatorMembers = members.filter(m => m.SK !== `USER#${userId}`);
-  await Promise.all(nonCreatorMembers.map(m =>
+  // 5b. Reset every active (non-LEFT) OTHER member's inviteStatus → PENDING
+  const nonCreatorActiveMembers = members.filter(
+    m => m.SK !== `USER#${userId}` && m.memberStatus !== "LEFT"
+  );
+  await Promise.all(nonCreatorActiveMembers.map(m =>
     docClient.send(new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { PK: `EVENT#${eventId}`, SK: m.SK },
@@ -91,6 +96,18 @@ export async function finalizeEvent(userId, eventId, body, docClient) {
       ExpressionAttributeValues: { ":pending": "PENDING", ":now": now },
     }))
   ));
+
+  // 6. Notify each active non-creator member that attendance confirmation is needed
+  await Promise.all(nonCreatorActiveMembers.map(m => {
+    const memberId = m.SK.replace("USER#", "");
+    return createNotification(docClient, {
+      recipientUserId: memberId,
+      notifType: "ATTENDANCE_REQUEST",
+      notificationId: `ATTENDANCE_REQUEST#${eventId}`,
+      message: `"${eventMeta.title}" has been scheduled. Please confirm your attendance.`,
+      payload: { eventId, eventTitle: eventMeta.title, selectedTime, selectedVenue },
+    });
+  }));
 
   return {
     eventId,

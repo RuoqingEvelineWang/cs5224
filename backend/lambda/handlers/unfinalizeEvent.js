@@ -46,7 +46,9 @@ export async function unfinalizeEvent(userId, eventId, docClient) {
   }
 
   const now = new Date().toISOString();
-  const members = items.filter(i => i.SK.startsWith("USER#"));
+  // Only reset active members — LEFT members are already out of the flow
+  const activeMembers = items
+    .filter(i => i.SK.startsWith("USER#") && i.memberStatus !== "LEFT");
 
   // Revert status and remove the chosen time + venue from METADATA
   await docClient.send(new UpdateCommand({
@@ -58,8 +60,8 @@ export async function unfinalizeEvent(userId, eventId, docClient) {
     ExpressionAttributeValues: { ":status": "SCHEDULING", ":now": now },
   }));
 
-  // Reset every member's inviteStatus so RSVPs are cleared
-  await Promise.all(members.map(m =>
+  // Reset every active member's inviteStatus so RSVPs are cleared
+  await Promise.all(activeMembers.map(m =>
     docClient.send(new UpdateCommand({
       TableName: TABLE_NAME,
       Key: { PK: `EVENT#${eventId}`, SK: m.SK },
