@@ -132,6 +132,42 @@ npx playwright show-report
 | TC-NOTIF-02 | ATTENDANCE_REQUEST notification shows Attend and Decline buttons |
 | TC-NOTIF-03 | ALL_SUBMITTED notification shows Select Time & Venue button |
 
+### Friends — extended (`friends.spec.ts`)
+
+| ID | Description |
+|----|-------------|
+| TC-FRND-03 | Send Request button is disabled when the user ID input is empty |
+| TC-FRND-04 | Typing a user ID into the search field enables the Send Request button |
+| TC-FRND-05 | Suggested Friends section renders with at least one recommendation (Fiona) |
+| TC-FRND-06 | Accepting an incoming friend request shows a success message |
+
+### Event creation — extended (`events.spec.ts`)
+
+| ID | Description |
+|----|-------------|
+| TC-EVT-04 | Selecting a different venue type updates the active button style |
+
+### Event workspace (`workspace.spec.ts`)
+
+| ID | Description |
+|----|-------------|
+| TC-WS-01 | Availability grid renders when event is in COLLECTING_AVAILABILITY state |
+| TC-WS-02 | Submit Availability button is disabled until at least one time slot is selected |
+| TC-WS-03 | Creator sees the Slot Voting grid and all-submitted banner in SCHEDULING state |
+| TC-WS-04 | Selecting a time slot in the voting grid reveals the Choose Venue button |
+| TC-WS-05 | Navigating to the Venue tab shows recommended venue cards with Select This Venue buttons |
+
+---
+
+## Important notes on test data
+
+- TC-FRND-06 modifies the database (accepts Evan's friend request). Re-seed before re-running:
+  ```bash
+  cd backend/cdk
+  npm run db:clear
+  DEMO_USER_ID=<your-cognito-user-id> npm run seed
+  ```
+- TC-WS-04 and TC-WS-05 depend on `evt-002` being in `SCHEDULING` status. If the event status has changed, re-seed before running workspace tests.
 ---
 
 ## Notes
