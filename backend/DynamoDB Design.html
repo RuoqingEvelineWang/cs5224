@@ -987,7 +987,7 @@ mainTable<span class="token punctuation">.</span><span class="token function">ad
 <td>14</td>
 <td><code>POST /events/:eventId/availability</code></td>
 <td><code>UpdateItem(PK=EVENT#eid, SK=USER#uid, availableTimeSlots=..., hasSubmittedAvailability=true)</code></td>
-<td>更新后检查所有成员是否已提交；若是则 <code>UpdateItem(PK=EVENT#eid, SK=METADATA, status=SELECTING_VENUE)</code></td>
+<td>更新后检查所有成员是否已提交；若是则 <code>UpdateItem(PK=EVENT#eid, SK=METADATA, status=SCHEDULING)</code></td>
 </tr>
 <tr>
 <td>15</td>
@@ -1010,7 +1010,7 @@ mainTable<span class="token punctuation">.</span><span class="token function">ad
 <tr>
 <td>18</td>
 <td><code>POST /events/:eventId/unfinalize</code></td>
-<td>验证 creator；<code>UpdateItem</code> EventInfo（清除 selectedTime/selectedVenue，status→SELECTING_VENUE）+ <code>UpdateItem</code> × N 重置所有成员 inviteStatus→PENDING</td>
+<td>验证 creator；<code>UpdateItem</code> EventInfo（清除 selectedTime/selectedVenue，status→SCHEDULING）+ <code>UpdateItem</code> × N 重置所有成员 inviteStatus→PENDING</td>
 <td>撤回定稿</td>
 </tr>
 </tbody>
@@ -1057,7 +1057,7 @@ mainTable<span class="token punctuation">.</span><span class="token function">ad
           所有参与者均提交后自动流转
                        │
                        ▼
-            SELECTING_VENUE
+            SCHEDULING
          （创建者选择最终时间和场地）
                        │
               创建者调用 finalize
@@ -1087,7 +1087,7 @@ mainTable<span class="token punctuation">.</span><span class="token function">ad
 <td>所有 EventMember.inviteStatus = PENDING</td>
 </tr>
 <tr>
-<td><code>SELECTING_VENUE</code></td>
+<td><code>SCHEDULING</code></td>
 <td>所有 EventMember.hasSubmittedAvailability = true</td>
 <td>Lambda 检测后自动更新 EventInfo.status</td>
 </tr>
@@ -1112,7 +1112,7 @@ mainTable<span class="token punctuation">.</span><span class="token function">ad
 2. BatchGetItem 获取对应 EventInfo
 3. 遍历每个 (EventMember, EventInfo) 对：
 
-   a. 若 EventInfo.status = SELECTING_VENUE AND EventMember.role = CREATOR
+   a. 若 EventInfo.status = SCHEDULING AND EventMember.role = CREATOR
       → 推导 ALL_SUBMITTED 通知（所有人都提交了，创建者该选场地了）
 
    b. 若 EventInfo.status = AWAITING_CONFIRMATION
@@ -1174,7 +1174,7 @@ mainTable<span class="token punctuation">.</span><span class="token function">ad
 <span class="token punctuation">}</span>
 </code></pre><h3 id="74-检查并触发状态流转">7.4 检查并触发状态流转 </h3>
 <pre data-role="codeBlock" data-info="javascript" class="language-javascript javascript"><code><span class="token comment">// Called after a member submits availability</span>
-<span class="token comment">// Auto-transitions event to SELECTING_VENUE when all members have submitted</span>
+<span class="token comment">// Auto-transitions event to SCHEDULING when all members have submitted</span>
 <span class="token keyword keyword-async">async</span> <span class="token keyword keyword-function">function</span> <span class="token function">checkAndAdvanceToSelectingVenue</span><span class="token punctuation">(</span><span class="token parameter">eventId</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
   <span class="token keyword keyword-const">const</span> members <span class="token operator">=</span> <span class="token keyword control-flow keyword-await">await</span> <span class="token function">getEventMembers</span><span class="token punctuation">(</span>eventId<span class="token punctuation">)</span><span class="token punctuation">;</span>
   <span class="token keyword keyword-const">const</span> allSubmitted <span class="token operator">=</span> members<span class="token punctuation">.</span><span class="token method function property-access">every</span><span class="token punctuation">(</span><span class="token parameter">m</span> <span class="token arrow operator">=&gt;</span> m<span class="token punctuation">.</span><span class="token property-access">hasSubmittedAvailability</span> <span class="token operator">===</span> <span class="token boolean">true</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
@@ -1185,7 +1185,7 @@ mainTable<span class="token punctuation">.</span><span class="token function">ad
       <span class="token literal-property property">UpdateExpression</span><span class="token operator">:</span> <span class="token string">'SET #s = :status, updatedAt = :now'</span><span class="token punctuation">,</span>
       <span class="token literal-property property">ExpressionAttributeNames</span><span class="token operator">:</span> <span class="token punctuation">{</span> <span class="token string-property property">'#s'</span><span class="token operator">:</span> <span class="token string">'status'</span> <span class="token punctuation">}</span><span class="token punctuation">,</span>
       <span class="token literal-property property">ExpressionAttributeValues</span><span class="token operator">:</span> <span class="token punctuation">{</span>
-        <span class="token string-property property">':status'</span><span class="token operator">:</span> <span class="token string">'SELECTING_VENUE'</span><span class="token punctuation">,</span>
+        <span class="token string-property property">':status'</span><span class="token operator">:</span> <span class="token string">'SCHEDULING'</span><span class="token punctuation">,</span>
         <span class="token string-property property">':now'</span><span class="token operator">:</span> <span class="token keyword keyword-new">new</span> <span class="token class-name">Date</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token method function property-access">toISOString</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
       <span class="token punctuation">}</span><span class="token punctuation">,</span>
     <span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token method function property-access">promise</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>

@@ -5,6 +5,7 @@ import {
   ScanCommand,
   TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
+import { createNotification } from "./getNotifications.js";
 
 const TABLE_NAME = process.env.MAIN_TABLE;
 const PROFILE_SK = "PROFILE";
@@ -106,6 +107,15 @@ export async function sendFriendRequest(userId, body, docClient) {
     }
     throw error;
   }
+
+  // Strongly consistent: notification is part of the friend request flow.
+  await createNotification(docClient, {
+    recipientUserId: targetUserId,
+    notifType: "FRIEND_REQUEST",
+    notificationId: `FRIEND_REQUEST#${userId}`,
+    message: `${requesterSnapshotName || userId} sent you a friend request.`,
+    payload: { fromUserId: userId, fromUserName: requesterSnapshotName || userId },
+  });
 
   return { message: "Friend request sent." };
 }

@@ -4,14 +4,19 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 
 export class CdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // 1. Define the Stage (default to 'dev' if not provided)
-    const stage = process.env.STAGE || 'dev';
+    // Prefer `cdk -c stage=...`, while still allowing env-based overrides in CI.
+    const stageContext = this.node.tryGetContext('stage');
+    const stage =
+      (typeof stageContext === 'string' && stageContext.trim()) ||
+      process.env.STAGE ||
+      'dev';
     const prefix = `midmeet-${stage}`;
 
     // 2. Define the Single Main Table
@@ -26,7 +31,10 @@ export class CdkStack extends cdk.Stack {
         type: dynamodb.AttributeType.STRING 
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true,
+      },
+      timeToLiveAttribute: 'ttl',
       // Change to RETAIN for production environments
       removalPolicy: cdk.RemovalPolicy.DESTROY, 
     });
@@ -76,17 +84,33 @@ export class CdkStack extends cdk.Stack {
     const apiLambda = new lambda.Function(this, 'ApiLambda', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset('../lambda'),
+      // The default timeout is 3 seconds, which is too short for the venues endpoint calls.
+      // Set to 30 seconds for the venues endpoint calls.
+      timeout: cdk.Duration.seconds(30),
+      code: lambda.Code.fromAsset('../lambda', {
+        exclude: ['node_modules'],
+      }),
       environment: {
         MAIN_TABLE: mainTable.tableName,
         MAIN_TABLE_GSI1: 'GSI1',
         MAIN_TABLE_GSI2: 'GSI2',
         ONEMAP_EMAIL: process.env.ONEMAP_EMAIL || '',
         ONEMAP_PASSWORD: process.env.ONEMAP_PASSWORD || '',
+        STAGE: stage,
       }
     });
 
     mainTable.grantReadWriteData(apiLambda);
+
+    // Allow Lambda to read secrets from SSM Parameter Store
+    apiLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/midmeet/${stage}/GOOGLE_PLACES_API_KEY`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/midmeet/${stage}/ONEMAP_EMAIL`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/midmeet/${stage}/ONEMAP_PASSWORD`,
+      ],
+    }));
 
     // API Gateway setup
     const api = new apigateway.RestApi(this, 'EventsApi', {
@@ -96,7 +120,10 @@ export class CdkStack extends cdk.Stack {
         allowHeaders: ['Authorization', 'Content-Type'],
       },
     });
-    const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda);
+    const lambdaIntegration = new apigateway.LambdaIntegration(apiLambda, {
+      allowTestInvoke: false,
+      scopePermissionToMethod: false,
+    });
     const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'Authorizer', {
       cognitoUserPools: [userPool]
     });
@@ -115,6 +142,37 @@ export class CdkStack extends cdk.Stack {
 
     // POST /events
     eventsResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/availability
+    const availabilityResource = singleEventResource.addResource('availability');
+    availabilityResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // GET /events/{id}/time-recommendations
+    const timeRecommendationsResource = singleEventResource.addResource('time-recommendations');
+    timeRecommendationsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/leave
+    const leaveResource = singleEventResource.addResource('leave');
+    leaveResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+    // POST /events/{id}/finalize  — creator locks in time + venue → AWAITING_CONFIRMATION
+    const finalizeResource = singleEventResource.addResource('finalize');
+    finalizeResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/confirm  — participant confirms attendance
+    const confirmResource = singleEventResource.addResource('confirm');
+    confirmResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/decline  — participant declines attendance
+    const declineResource = singleEventResource.addResource('decline');
+    declineResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // POST /events/{id}/unfinalize  — creator reverts back to SCHEDULING
+    const unfinalizeResource = singleEventResource.addResource('unfinalize');
+    unfinalizeResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // GET /events/{id}/venues  — fetch venue recommendations for an event
+    const venuesResource = singleEventResource.addResource('venues');
+    venuesResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
 
     // Geocode route
     const geocodeResource = api.root.addResource('geocode');
@@ -145,6 +203,14 @@ export class CdkStack extends cdk.Stack {
 
     const friendSuggestionsResource = friendsResource.addResource('suggestions').addResource('{userId}');
     friendSuggestionsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+
+    // Notifications routes
+    const notificationsResource = api.root.addResource('notifications');
+    notificationsResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
+    const notificationsReadResource = notificationsResource.addResource('read');
+    notificationsReadResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
+    const singleNotificationResource = notificationsResource.addResource('{notificationId}');
+    singleNotificationResource.addMethod('PUT', lambdaIntegration, protectedMethodOptions);
 
     // Output the Table Name for reference
     new cdk.CfnOutput(this, 'MainTableName', {

@@ -16,7 +16,7 @@ export async function getEventById(userId, eventId, docClient) {
   if (items.length === 0) return null;
 
   const eventMeta = items.find(i => i.SK === 'METADATA');
-  const members = items.filter(i => i.SK.startsWith('USER#'));
+  const members = items.filter(i => i.SK.startsWith('USER#') && i.memberStatus !== 'LEFT');
 
   // 2. Security Check: Is the requesting user allowed to see this?
   const isMember = members.some(m => m.SK === `USER#${userId}`) || eventMeta.creatorId === userId;
@@ -42,6 +42,7 @@ export async function getEventById(userId, eventId, docClient) {
     availabilitySubmittedBy: members.filter(m => m.hasSubmittedAvailability).map(m => m.SK.replace('USER#', '')),
     confirmedUserIds: members.filter(m => m.inviteStatus === "ACCEPTED").map(m => m.SK.replace('USER#', '')),
     declinedUserIds: members.filter(m => m.inviteStatus === "DECLINED").map(m => m.SK.replace('USER#', '')),
+    slotCounts: computeSlotCounts(members),
   };
 
   // 4. Application-Side Join: Get User Names
@@ -60,10 +61,21 @@ export async function getEventById(userId, eventId, docClient) {
 
   return {
     ...eventDetail,
+    slotCounts: computeSlotCounts(members),
     creatorName: userMap[eventDetail.creatorId] || 'Creator',
     participants: eventDetail.participants.map(p => ({
       ...p,
       name: userMap[p.userId] || 'Unknown User'
     }))
   };
+}
+
+function computeSlotCounts(members) {
+  const counts = {};
+  for (const member of members) {
+    for (const slot of (member.availableTimeSlots || [])) {
+      counts[slot] = (counts[slot] || 0) + 1;
+    }
+  }
+  return counts;
 }

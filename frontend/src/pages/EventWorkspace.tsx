@@ -3,12 +3,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import { fetchAuthSession } from "aws-amplify/auth";
 import {
   fetchVenues,
-  submitAvailability,
-  finalizeEvent,
   leaveEvent,
   getDatesInRange,
 } from "../api/Event.tsx";
-import type { EventDetail, Venue, TimeSlot } from "../api/Event.tsx";
+import type { EventDetail, Venue, ParticipantTravel, TimeSlot } from "../api/Event.tsx";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -30,8 +28,13 @@ function formatDayHeader(dateStr: string) {
   };
 }
 
+// Hours must be zero-padded to match the server's "YYYY-MM-DD-HH" validation
+// regex (e.g. 9 AM → "09", not "9"). Without padding, two things break:
+//   1. The server rejects single-digit hours with a 400 error.
+//   2. Grid keys mismatch the keys stored in slotCounts by the server,
+//      so the creator's voting grid appears empty for all AM slots.
 function slotKey(date: string, hour: number) {
-  return `${date}-${hour}`;
+  return `${date}-${String(hour).padStart(2, '0')}`;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -39,7 +42,7 @@ function slotKey(date: string, hour: number) {
 function StatusBadge({ status }: { status: EventDetail["status"] }) {
   const map: Record<EventDetail["status"], { label: string; cls: string }> = {
     COLLECTING_AVAILABILITY: { label: "Collecting Availability", cls: "bg-amber-100 text-amber-700" },
-    SELECTING_VENUE:         { label: "Selecting Venue",         cls: "bg-blue-100 text-blue-700" },
+    SCHEDULING:              { label: "Scheduling",              cls: "bg-blue-100 text-blue-700" },
     AWAITING_CONFIRMATION:   { label: "Awaiting Confirmation",   cls: "bg-violet-100 text-violet-700" },
     FINALIZED:               { label: "Confirmed",               cls: "bg-green-100 text-green-700" },
   };
@@ -51,7 +54,7 @@ function StatusBadge({ status }: { status: EventDetail["status"] }) {
   );
 }
 
-function StarRating({ rating }: { rating: number }) {
+function StarRating({ rating }: { rating: number | null }) {
   if (rating == null) return null;
   const full = Math.round(rating);
   return (
@@ -116,7 +119,7 @@ function SelectionGrid({ dates, hours, selectedSlots, onMouseDown, onMouseEnter 
   );
 }
 
-// ─── Voting Grid (creator in SELECTING_VENUE — shows vote counts, click to pick) ─
+// ─── Voting Grid (creator in SCHEDULING — shows vote counts, click to pick) ─
 
 interface VotingGridProps {
   dates: string[];
@@ -188,8 +191,12 @@ function VotingGrid({ dates, hours, slotCounts, totalParticipants, selectedSlot,
 // ─── Venue Card ───────────────────────────────────────────────────────────────
 
 function VenueCard({ venue, canSelect, onSelect }: { venue: Venue; canSelect: boolean; onSelect: (v: Venue) => void }) {
+  const [showTravelBreakdown, setShowTravelBreakdown] = useState(false);
+  const hasParticipants = (venue.participantTravel?.length ?? 0) > 0;
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col gap-3 hover:shadow-md transition-shadow">
+      {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-gray-900 text-base leading-tight">{venue.name}</h3>
@@ -197,11 +204,46 @@ function VenueCard({ venue, canSelect, onSelect }: { venue: Venue; canSelect: bo
         </div>
         <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 text-xl">📍</div>
       </div>
-      <div className="flex items-center gap-4 text-sm text-gray-600">
+
+      {/* Stats row */}
+      <div className="flex items-center gap-4 text-sm text-gray-600 flex-wrap">
         <StarRating rating={venue.rating} />
-        <span>🗺 {venue.distanceKm?.toFixed(1)} km</span>
-        <span>⏱ ~{venue.estimatedMinutes} min</span>
+        <span>🗺 {venue.distanceKm?.toFixed(1)} km from midpoint</span>
+        <span>⏱ avg {venue.estimatedMinutes} min</span>
       </div>
+
+      {/* Fairness score badge */}
+      {venue.fairnessScore != null && (
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700">
+            ⚖ Fairness score: {venue.fairnessScore.toFixed(1)} min
+          </span>
+          <span className="text-xs text-gray-400">(lower = fairer for everyone)</span>
+        </div>
+      )}
+
+      {/* Per-participant travel time breakdown */}
+      {hasParticipants && (
+        <div>
+          <button
+            onClick={() => setShowTravelBreakdown(p => !p)}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+          >
+            {showTravelBreakdown ? "▲" : "▼"} Travel times per attendee
+          </button>
+          {showTravelBreakdown && (
+            <ul className="mt-2 space-y-1">
+              {(venue.participantTravel as ParticipantTravel[]).map(pt => (
+                <li key={pt.userId} className="flex items-center justify-between text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-1.5">
+                  <span className="font-medium">{pt.name}</span>
+                  <span className="text-gray-500">~{pt.estimatedMinutes} min</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {canSelect && (
         <button
           onClick={() => onSelect(venue)}
@@ -243,6 +285,9 @@ export default function EventWorkspace() {
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
+  // Participant RSVP (confirm / decline attendance)
+  const [rsvping, setRsvping] = useState(false);
+
   const isDragging = useRef(false);
   const dragMode = useRef<"add" | "remove">("add");
 
@@ -271,7 +316,7 @@ export default function EventWorkspace() {
         const { data } = await response.json();
         setEvent(data);
         
-        if (data.status === 'SELECTING_VENUE') setActiveTab("availability");
+        if (data.status === 'SCHEDULING') setActiveTab("availability");
       } catch (error) {
         console.error("Error loading workspace:", error);
       } finally {
@@ -317,22 +362,27 @@ export default function EventWorkspace() {
   async function handleSubmitAvailability() {
     if (!eventId || !currentUserId) return;
     setSubmitting(true);
-    const slots: TimeSlot[] = Array.from(selectedSlots).map(key => {
-      const lastDash = key.lastIndexOf("-");
-      return { date: key.slice(0, lastDash), startHour: parseInt(key.slice(lastDash + 1)) };
-    });
-    
-    await submitAvailability(eventId, currentUserId, slots);
-    
-    // Re-fetch to get updated slot counts
+    const availableTimeSlots = Array.from(selectedSlots);
+
     const session = await fetchAuthSession();
     const token = session.tokens?.idToken?.toString();
     const apiUrl = import.meta.env.VITE_API_URL;
+
+    await fetch(`${apiUrl}/events/${eventId}/availability`, {
+      method: 'POST',
+      headers: {
+        'Authorization': token || '',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ availableTimeSlots }),
+    });
+
+    // Re-fetch to get updated slot counts
     const response = await fetch(`${apiUrl}/events/${eventId}`, {
       headers: { 'Authorization': token || '' }
     });
     const { data: refreshed } = await response.json();
-    
+
     setEvent(refreshed);
     setSubmitting(false);
     setSubmitted(true);
@@ -347,16 +397,24 @@ export default function EventWorkspace() {
     };
     setFinalizing(true);
     try {
-      await finalizeEvent(eventId, slot, venue.venueId);
-      
       const session = await fetchAuthSession();
       const token = session.tokens?.idToken?.toString();
       const apiUrl = import.meta.env.VITE_API_URL;
-      const response = await fetch(`${apiUrl}/events/${eventId}`, {
-        headers: { 'Authorization': token || '' }
+
+      // Persist the creator's chosen time + venue and advance event to AWAITING_CONFIRMATION
+      const finalizeRes = await fetch(`${apiUrl}/events/${eventId}/finalize`, {
+        method: 'POST',
+        headers: { 'Authorization': token || '', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectedTime: slot, selectedVenue: venue }),
       });
-      const { data: finalEvent } = await response.json();
-      
+      if (!finalizeRes.ok) throw new Error(`Finalize failed: ${finalizeRes.status}`);
+
+      // Refetch the updated event so the details page has fresh data
+      const eventRes = await fetch(`${apiUrl}/events/${eventId}`, {
+        headers: { 'Authorization': token || '' },
+      });
+      const { data: finalEvent } = await eventRes.json();
+
       navigate(`/events/${eventId}/details`, {
         state: { event: finalEvent, selectedSlot: slot, selectedVenue: venue },
       });
@@ -364,6 +422,63 @@ export default function EventWorkspace() {
       console.error("Failed to finalize event:", err);
     } finally {
       setFinalizing(false);
+    }
+  }
+
+  async function handleRevertSchedule() {
+    if (!eventId) return;
+    setRsvping(true); // reuse loading flag to disable buttons
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const res = await fetch(`${apiUrl}/events/${eventId}/unfinalize`, {
+        method: 'POST',
+        headers: { 'Authorization': token || '', 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`Unfinalize failed: ${res.status}`);
+      // Refresh event state — status will now be SCHEDULING
+      const eventRes = await fetch(`${apiUrl}/events/${eventId}`, {
+        headers: { 'Authorization': token || '' },
+      });
+      const { data: refreshed } = await eventRes.json();
+      setEvent(refreshed);
+      setSelectedFinalSlotKey(null);
+    } catch (err) {
+      console.error("Failed to revert schedule:", err);
+    } finally {
+      setRsvping(false);
+    }
+  }
+
+  async function handleRsvp(action: 'confirm' | 'decline') {
+    if (!eventId) return;
+    setRsvping(true);
+    try {
+      const session = await fetchAuthSession();
+      const token = session.tokens?.idToken?.toString();
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const res = await fetch(`${apiUrl}/events/${eventId}/${action}`, {
+        method: 'POST',
+        headers: { 'Authorization': token || '', 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error(`RSVP failed: ${res.status}`);
+
+      // Refetch the event so the participant badges update immediately
+      const eventRes = await fetch(`${apiUrl}/events/${eventId}`, {
+        headers: { 'Authorization': token || '' },
+      });
+      const { data: refreshed } = await eventRes.json();
+      setEvent(refreshed);
+
+      // If the event just became FINALIZED, navigate to the details page
+      if (refreshed?.status === 'FINALIZED') {
+        navigate(`/events/${eventId}/details`, { state: { event: refreshed } });
+      }
+    } catch (err) {
+      console.error(`Failed to ${action} attendance:`, err);
+    } finally {
+      setRsvping(false);
     }
   }
 
@@ -404,7 +519,7 @@ export default function EventWorkspace() {
   const isCreator = event.creatorId === currentUserId;
   const alreadySubmitted = (event.availabilitySubmittedBy ?? []).includes(currentUserId);
 
-  const venueUnlocked = isCreator && event.status === 'SELECTING_VENUE' && selectedFinalSlotKey !== null;
+  const venueUnlocked = isCreator && event.status === 'SCHEDULING' && selectedFinalSlotKey !== null;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -470,9 +585,21 @@ export default function EventWorkspace() {
       {/* ── AWAITING_CONFIRMATION banner ── */}
       {event.status === 'AWAITING_CONFIRMATION' && (
         <div className="rounded-2xl bg-violet-50 border border-violet-200 p-5 space-y-2">
-          <p className="text-sm font-semibold text-violet-800">
-            📩 Event scheduled — waiting for participants to confirm
-          </p>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-violet-800">
+              📩 Event scheduled — waiting for participants to confirm
+            </p>
+            {/* Creator can abandon the current schedule early without waiting for all RSVPs */}
+            {isCreator && (
+              <button
+                onClick={handleRevertSchedule}
+                disabled={rsvping}
+                className="shrink-0 text-xs px-3 py-1.5 rounded-xl border border-violet-300 text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-50"
+              >
+                Change Schedule
+              </button>
+            )}
+          </div>
           {event.selectedTime && event.selectedVenue && (
             <p className="text-sm text-violet-700">
               {event.selectedTime.date} at {formatHour(event.selectedTime.startHour)} · {event.selectedVenue.name}
@@ -493,9 +620,35 @@ export default function EventWorkspace() {
               );
             })}
           </div>
-          <p className="text-xs text-violet-500">
-            Participants confirm or decline via their Notifications.
-          </p>
+          {/* Show RSVP buttons when the current user hasn't responded yet */}
+          {currentUserId && !isCreator && (() => {
+            const alreadyConfirmed = (event.confirmedUserIds ?? []).includes(currentUserId);
+            const alreadyDeclined  = (event.declinedUserIds  ?? []).includes(currentUserId);
+            if (alreadyConfirmed) {
+              return <p className="text-xs text-green-600 font-medium">✓ You confirmed your attendance.</p>;
+            }
+            if (alreadyDeclined) {
+              return <p className="text-xs text-red-500 font-medium">✗ You declined this event.</p>;
+            }
+            return (
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => handleRsvp('confirm')}
+                  disabled={rsvping}
+                  className="px-4 py-1.5 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                >
+                  {rsvping ? '…' : '✓ Confirm Attendance'}
+                </button>
+                <button
+                  onClick={() => handleRsvp('decline')}
+                  disabled={rsvping}
+                  className="px-4 py-1.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition-colors disabled:opacity-50"
+                >
+                  {rsvping ? '…' : '✗ Decline'}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -508,13 +661,13 @@ export default function EventWorkspace() {
               activeTab === "availability" ? "bg-white text-indigo-700 shadow-sm" : "text-gray-500 hover:text-gray-800"
             }`}
           >
-            {event.status === 'SELECTING_VENUE' && isCreator ? "🗳 Slot Voting" : "🗓 Availability"}
+            {event.status === 'SCHEDULING' && isCreator ? "🗳 Slot Voting" : "🗓 Availability"}
           </button>
           <button
             onClick={() => venueUnlocked && setActiveTab("venue")}
             disabled={!venueUnlocked}
             title={!venueUnlocked ? (
-              isCreator && event.status === 'SELECTING_VENUE'
+              isCreator && event.status === 'SCHEDULING'
                 ? "Select a time slot above first"
                 : "Submit your availability first"
             ) : undefined}
@@ -578,8 +731,8 @@ export default function EventWorkspace() {
         </div>
       )}
 
-      {/* ── Availability Tab: creator sees vote counts in SELECTING_VENUE ── */}
-      {activeTab === "availability" && event.status === 'SELECTING_VENUE' && isCreator && (
+      {/* ── Availability Tab: creator sees vote counts in SCHEDULING ── */}
+      {activeTab === "availability" && event.status === 'SCHEDULING' && isCreator && (
         <div className="space-y-4">
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm text-blue-800">
             All {totalParticipants} participants have submitted. Click a highlighted slot to select it as the final time.
@@ -618,8 +771,8 @@ export default function EventWorkspace() {
         </div>
       )}
 
-      {/* ── Availability Tab: non-creator waiting in SELECTING_VENUE ── */}
-      {activeTab === "availability" && event.status === 'SELECTING_VENUE' && !isCreator && (
+      {/* ── Availability Tab: non-creator waiting in SCHEDULING ── */}
+      {activeTab === "availability" && event.status === 'SCHEDULING' && !isCreator && (
         <div className="flex flex-col items-center py-12 gap-3 text-center">
           <div className="text-4xl">⏳</div>
           <p className="text-gray-700 font-medium">All participants have submitted their availability.</p>

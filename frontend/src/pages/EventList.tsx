@@ -240,7 +240,7 @@ export default function EventList() {
 
   // Separate active events by group
   const activeEvents = applyFiltersAndSort(
-    myEvents.filter(e => e.status === 'COLLECTING_AVAILABILITY' || e.status === 'SELECTING_VENUE'),
+    myEvents.filter(e => e.status === 'COLLECTING_AVAILABILITY' || e.status === 'SCHEDULING'),
     search, venueType, sort
   );
   const awaitingEvents = applyFiltersAndSort(

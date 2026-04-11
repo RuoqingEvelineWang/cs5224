@@ -174,9 +174,9 @@ export default function EventDetails() {
       {showRevertConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4 space-y-4">
-            <h3 className="text-base font-semibold text-gray-900">Revert this event?</h3>
+            <h3 className="text-base font-semibold text-gray-900">Change the schedule?</h3>
             <p className="text-sm text-gray-500">
-              The selected venue and time will be cleared. The event will return to venue selection so a different venue can be chosen.
+              The selected time and venue will be cleared and all RSVPs reset. You'll be taken back to slot &amp; venue selection to pick a new schedule.
             </p>
             <div className="flex gap-3 pt-1">
               <button
@@ -197,31 +197,46 @@ export default function EventDetails() {
         </div>
       )}
 
-      {/* ── Success Banner ── */}
-      <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 p-6 text-white shadow-lg">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl">
-            🎉
+      {/* ── Header Banner ── */}
+      {(() => {
+        const confirmed = event.confirmedUserIds ?? [];
+        const declined  = event.declinedUserIds  ?? [];
+        const hasDeclines = declined.length > 0;
+        return (
+          <div className={`rounded-2xl p-6 text-white shadow-lg bg-gradient-to-br ${hasDeclines ? 'from-amber-500 to-orange-500' : 'from-indigo-600 to-violet-600'}`}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-xl">
+                {hasDeclines ? '⚠️' : '🎉'}
+              </div>
+              <div>
+                <p className="text-white/80 text-sm font-medium">
+                  {hasDeclines ? `${confirmed.length} confirmed · ${declined.length} declined` : 'Event Confirmed'}
+                </p>
+                <h1 className="text-xl font-bold leading-tight">{event.title}</h1>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {event.participants?.map(p => {
+                const isConfirmed = confirmed.includes(p.userId);
+                const isDeclined  = declined.includes(p.userId);
+                return (
+                  <span
+                    key={p.userId}
+                    className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${
+                      isDeclined ? 'bg-white/10 text-white/50 line-through' : 'bg-white/20 text-white'
+                    }`}
+                  >
+                    <span className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center font-bold text-[10px]">
+                      {p.name?.[0] || '?'}
+                    </span>
+                    {p.name || 'Unknown'} {isConfirmed ? '✓' : isDeclined ? '✗' : ''}
+                  </span>
+                );
+              })}
+            </div>
           </div>
-          <div>
-            <p className="text-indigo-100 text-sm font-medium">Event Confirmed</p>
-            <h1 className="text-xl font-bold leading-tight">{event.title}</h1>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 mt-4">
-          {event.participants?.map(p => (
-            <span
-              key={p.userId}
-              className="inline-flex items-center gap-1 text-xs bg-white/20 text-white px-2.5 py-1 rounded-full"
-            >
-              <span className="w-4 h-4 rounded-full bg-white/30 flex items-center justify-center font-bold text-[10px]">
-                {p.name?.[0] || '?'}
-              </span>
-              {p.name || 'Unknown'}
-            </span>
-          ))}
-        </div>
-      </div>
+        );
+      })()}
 
       {/* ── Details Card ── */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-5">
@@ -241,14 +256,27 @@ export default function EventDetails() {
 
         <DetailRow icon="👥" label="Attendees">
           <ul className="space-y-1.5">
-            {event.participants?.map(p => (
-              <li key={p.userId} className="flex items-center gap-2 text-sm">
-                <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-semibold text-[11px]">
-                  {p.name?.[0] || '?'}
-                </span>
-                <span className="text-gray-800">{p.name || 'Unknown User'}</span>
-              </li>
-            ))}
+            {event.participants?.map(p => {
+              const isConfirmed = (event.confirmedUserIds ?? []).includes(p.userId);
+              const isDeclined  = (event.declinedUserIds  ?? []).includes(p.userId);
+              return (
+                <li key={p.userId} className="flex items-center gap-2 text-sm">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center font-semibold text-[11px] ${
+                    isDeclined ? 'bg-red-100 text-red-500' : 'bg-indigo-100 text-indigo-600'
+                  }`}>
+                    {p.name?.[0] || '?'}
+                  </span>
+                  <span className={isDeclined ? 'text-gray-400 line-through' : 'text-gray-800'}>
+                    {p.name || 'Unknown User'}
+                  </span>
+                  <span className={`ml-auto text-xs font-medium ${
+                    isConfirmed ? 'text-green-600' : isDeclined ? 'text-red-400' : 'text-gray-400'
+                  }`}>
+                    {isConfirmed ? '✓ Attending' : isDeclined ? '✗ Declined' : 'Pending'}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </DetailRow>
 

@@ -1,8 +1,16 @@
 # MidMeet — Frontend–Backend Integration Guide
 
 > **Audience:** Backend developers implementing Lambda handlers and CDK infrastructure.
-> **Last updated:** 2026-03-28
+> **Last updated:** 2026-04-09
 > **Related files:** `README.md`, `FRONTEND_PROGRESS.md`, `backend/cdk/lib/DynamoDB_Tables.md`
+
+---
+
+## Changelog
+
+| Date | Author | Description |
+|------|--------|-------------|
+| 2026-04-09 | Huang Zhenxu | Renamed event status `SELECTING_VENUE` → `SCHEDULING`. Updated all API descriptions, state transition notes, notification logic, and conflict resolution constants accordingly. |
 
 ---
 
@@ -472,7 +480,7 @@ Submit the current user's available time slots.
    SET availableTimeSlots = :slots, updatedAt = :now
    ```
 2. Check if **all** non-creator members have now submitted. If yes:
-   - `UpdateItem` on `midmeet-{stage}-events`: `SET status = "SELECTING_VENUE", updatedAt = :now`
+   - `UpdateItem` on `midmeet-{stage}-events`: `SET status = "SCHEDULING", updatedAt = :now`
 
 **Response:** Updated event object (same as `GET /events/:eventId`).
 
@@ -550,7 +558,7 @@ Check for full-response transition to `FINALIZED` same as above.
 ---
 
 #### `POST /events/:eventId/unfinalize`
-Creator reverts a finalized/confirmed event back to `SELECTING_VENUE`.
+Creator reverts a finalized/confirmed event back to `SCHEDULING`.
 
 **Auth:** Required. Only the creator may call this.
 
@@ -558,7 +566,7 @@ Creator reverts a finalized/confirmed event back to `SELECTING_VENUE`.
 1. `UpdateItem` on `midmeet-{stage}-events`:
    ```
    REMOVE selectedTime, selectedVenue
-   SET #s = "SELECTING_VENUE", updatedAt = :now
+   SET #s = "SCHEDULING", updatedAt = :now
    ```
 2. `UpdateItem` on all EventMembers records for this event: reset `inviteStatus` to `"PENDING"` for all non-creator members.
 
@@ -605,7 +613,7 @@ Returns actionable and informational notifications for the current user.
 **Logic:**
 1. Query EventMembers GSI `userId-createdAt-index` to get all events the user belongs to
 2. For each event:
-   - If `status = "SELECTING_VENUE"` and user is creator → `ALL_SUBMITTED` notification
+   - If `status = "SCHEDULING"` and user is creator → `ALL_SUBMITTED` notification
    - If `status = "AWAITING_CONFIRMATION"` and user's `inviteStatus = "PENDING"` → `ATTENDANCE_REQUEST` notification
 3. Query Friendships for `status = "PENDING"` and `requestedBy <> userId` → `FRIEND_REQUEST` notifications
 
@@ -823,7 +831,7 @@ const EVENTS_TABLE  = process.env.EVENTS_TABLE;
 
 ### Conflict 6 — Event status enum values differ
 
-**Location:** `backend/cdk/lib/DynamoDB_Tables.md` example shows `"TIME_SELECTING"`; frontend uses `"SELECTING_VENUE"`.
+**Location:** `backend/cdk/lib/DynamoDB_Tables.md` example shows `"TIME_SELECTING"`; frontend uses `"SCHEDULING"`.
 
 **Problem:** No canonical enum is defined in the backend. Risk of inconsistency as multiple developers implement handlers.
 
@@ -832,7 +840,7 @@ const EVENTS_TABLE  = process.env.EVENTS_TABLE;
 // constants.mjs
 export const EVENT_STATUS = {
   COLLECTING_AVAILABILITY: 'COLLECTING_AVAILABILITY',
-  SELECTING_VENUE:         'SELECTING_VENUE',
+  SCHEDULING:              'SCHEDULING',
   AWAITING_CONFIRMATION:   'AWAITING_CONFIRMATION',
   FINALIZED:               'FINALIZED',
 };
