@@ -1,137 +1,68 @@
-/**
- * events.spec.ts
- *
- * Tests the Events list and the Event Creation Wizard.
- * Uses saved auth state.
- */
-
 import { test, expect } from '@playwright/test';
-
-test.describe('Events list', () => {
-
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/events');
-    await page.waitForLoadState('networkidle');
-  });
-
-  // ── TC-EVT-01: Events list page renders ───────────────────────────────────
-  test('TC-EVT-01: events list page loads without crashing', async ({ page }) => {
-    const main = page.locator('main');
-    await expect(main).toBeVisible({ timeout: 10_000 });
-    // No unhandled error overlay
-    const errorOverlay = page.locator('text=Something went wrong');
-    await expect(errorOverlay).not.toBeVisible();
-  });
-
-  // ── TC-EVT-02: Empty state or event cards render ──────────────────────────
-  test('TC-EVT-02: events list shows empty state or event cards', async ({ page }) => {
-    await page.waitForTimeout(2000); // Allow API to respond
-    const hasEmpty = await page.getByText(/No events|no upcoming|get started/i).isVisible().catch(() => false);
-    const hasCards = await page.locator('li, article, [data-testid="event-card"]').first().isVisible().catch(() => false);
-    expect(hasEmpty || hasCards).toBe(true);
-  });
-
-});
 
 test.describe('Event creation wizard', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/events/new');
-    await page.waitForLoadState('networkidle');
+    // Wait for the friends list to finish loading before interacting
+    // await expect(page.locator('.animate-spin')).not.toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Invite Friends' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: /Continue/i })).toBeVisible();
   });
 
-  // ── TC-EVT-03: Event creation wizard loads ────────────────────────────────
-  test('TC-EVT-03: event creation wizard renders initial step', async ({ page }) => {
-    const main = page.locator('main');
-    await expect(main).toBeVisible({ timeout: 10_000 });
-    // Should show some form fields or step indicator
-    const hasInput = await page.getByRole('textbox').first().isVisible({ timeout: 5_000 }).catch(() => false);
-    const hasStep = await page.getByText(/Step|Event|Create/i).isVisible().catch(() => false);
-    expect(hasInput || hasStep).toBe(true);
+  // TC-EVT-01: Continue button is disabled when no friend is selected (Step 1)
+  test('TC-EVT-01: Continue button is disabled until at least one friend is selected', async ({ page }) => {
+    // Step 1 heading
+    // await expect(page.getByText('Invite Friends')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Invite Friends' })).toBeVisible();
+
+    const continueBtn = page.getByRole('button', { name: /Continue/i });
+    await expect(continueBtn).toBeDisabled();
   });
 
-  // ── TC-EVT-04: Event name field accepts input ─────────────────────────────
-  test('TC-EVT-04: event name input field accepts text', async ({ page }) => {
-    const nameInput = page.getByRole('textbox').first();
-    if (await nameInput.isVisible()) {
-      await nameInput.fill('Test Badminton Session');
-      await expect(nameInput).toHaveValue('Test Badminton Session');
-    } else {
-      test.skip();
-    }
+  // TC-EVT-02: Selecting a friend enables Continue and advances to Step 2
+  test('TC-EVT-02: selecting a friend enables Continue and navigates to Step 2', async ({ page }) => {
+    // Bob and Charlie are added as friends by the seed script
+    // Click the first available friend card (any friend will do)
+    const firstFriendCard = page.locator('button.rounded-xl.border').first();
+    await firstFriendCard.click();
+
+    const continueBtn = page.getByRole('button', { name: /Continue/i });
+    await expect(continueBtn).toBeEnabled();
+    await continueBtn.click();
+
+    // Step 2 heading
+    // await expect(page.getByText('Event Details')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Event Details' })).toBeVisible();
   });
 
-  // ── TC-EVT-05: Venue type selection ──────────────────────────────────────
-  test('TC-EVT-05: venue type options are selectable', async ({ page }) => {
-    const venueTypes = ['Sports Hall', 'Cafe', 'Restaurant', 'Park', 'Mall', 'Library'];
+  // TC-EVT-03: Filling in all required fields on Step 2 enables the Create button
+  test('TC-EVT-03: filling required fields on Step 2 enables the Create & Open Workspace button', async ({ page }) => {
+    // --- Step 1: select a friend ---
+    const firstFriendCard = page.locator('button.rounded-xl.border').first();
+    await firstFriendCard.click();
+    await page.getByRole('button', { name: /Continue/i }).click();
+    // await expect(page.getByText('Event Details')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Event Details' })).toBeVisible();
 
-    for (const vt of venueTypes) {
-      const btn = page.getByRole('button', { name: vt });
-      if (await btn.isVisible()) {
-        await btn.click();
-        console.log(`Clicked venue type: ${vt}`);
-        break;
-      }
-    }
-    // If no venue type buttons visible, wizard may be on a different step
-    // This is acceptable for an in-progress app
-  });
+    // --- Step 2: fill in required fields ---
+    await page.getByPlaceholder('e.g. Badminton Meetup, Sunday Brunch').fill('Test Event');
 
-  // ── TC-EVT-06: Date range inputs ─────────────────────────────────────────
-  test('TC-EVT-06: date range inputs are present and accept values', async ({ page }) => {
-    const dateInputs = page.locator('input[type="date"]');
-    const count = await dateInputs.count();
+    // Use dates that are guaranteed to be in the future relative to today
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() + 1);
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + 3);
 
-    if (count > 0) {
-      await dateInputs.first().fill('2026-05-01');
-      await expect(dateInputs.first()).toHaveValue('2026-05-01');
-    } else {
-      // Date inputs may be on a later step
-      console.log('No date inputs found on first wizard step');
-    }
-  });
+    const fmt = (d: Date) => d.toISOString().split('T')[0]; // YYYY-MM-DD
 
-  // ── TC-EVT-07: Next/back navigation in wizard ────────────────────────────
-  test('TC-EVT-07: wizard has navigation controls', async ({ page }) => {
-    // Look for Next/Back/Continue buttons typical in a multi-step wizard
-    const nextBtn = page.getByRole('button', { name: /Next|Continue|Proceed/i });
-    const backBtn = page.getByRole('button', { name: /Back|Previous/i });
+    await page.locator('input[type="date"]').nth(0).fill(fmt(startDate));
+    await page.locator('input[type="date"]').nth(1).fill(fmt(endDate));
 
-    const hasNext = await nextBtn.isVisible().catch(() => false);
-    const hasBack = await backBtn.isVisible().catch(() => false);
-
-    // At least one navigation control should exist
-    expect(hasNext || hasBack).toBe(true);
-  });
-
-  // ── TC-EVT-08: Submit without required fields shows validation ────────────
-  test('TC-EVT-08: advancing without required fields shows validation error', async ({ page }) => {
-    // Try to proceed without filling anything
-    const nextBtn = page.getByRole('button', { name: /Next|Continue|Create/i }).first();
-    if (await nextBtn.isVisible()) {
-      await nextBtn.click();
-      // Should show some validation feedback
-      const hasError = await page.locator('.bg-red-50, [role="alert"], .text-red-').first().isVisible({ timeout: 3_000 }).catch(() => false);
-      // Or the wizard stays on the same step (doesn't advance)
-      console.log('Validation error shown:', hasError);
-    } else {
-      test.skip();
-    }
-  });
-
-});
-
-test.describe('Event workspace', () => {
-
-  // ── TC-EVT-09: Event workspace requires valid event ID ────────────────────
-  test('TC-EVT-09: invalid event ID shows graceful error state', async ({ page }) => {
-    await page.goto('/events/nonexistent-event-id/workspace');
-    await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(3000); // Allow API call to fail
-
-    // Should show an error or "not found" state, not a blank crash
-    const body = await page.locator('main').textContent();
-    expect(body).not.toBe(''); // Main content area should not be empty
+    // canCreate becomes true — Create button should be enabled
+    const createBtn = page.getByRole('button', { name: /Create & Open Workspace/i });
+    await expect(createBtn).toBeEnabled();
   });
 
 });

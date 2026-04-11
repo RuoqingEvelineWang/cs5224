@@ -10,8 +10,8 @@ import { test, expect } from '@playwright/test';
 // Override storageState for auth tests — we want a fresh unauthenticated session
 test.use({ storageState: { cookies: [], origins: [] } });
 
-const TEST_EMAIL = process.env.TEST_EMAIL ?? 'your-test-account@example.com';
-const TEST_PASSWORD = process.env.TEST_PASSWORD ?? 'YourTestPassword123!';
+const TEST_EMAIL = process.env.TEST_EMAIL ?? '';
+const TEST_PASSWORD = process.env.TEST_PASSWORD ?? '';
 
 test.describe('Authentication page', () => {
 
@@ -37,23 +37,13 @@ test.describe('Authentication page', () => {
     await expect(page.getByRole('button', { name: 'Sign up' })).toBeVisible();
   });
 
-  // ── TC-AUTH-02: Successful login ─────────────────────────────────────────
-  test('TC-AUTH-02: successful sign-in navigates away from auth page', async ({ page }) => {
+  // TC-AUTH-02: successful sign-in navigates away from auth page
+  test('TC-AUTH-02: successful sign-in reaches the Dashboard', async ({ page }) => {
     await page.getByPlaceholder('you@example.com').fill(TEST_EMAIL);
     await page.getByPlaceholder('••••••••').first().fill(TEST_PASSWORD);
     await page.getByRole('button', { name: 'Sign In' }).click();
 
-    // After login, URL should change (to / or /onboarding equivalent)
-    await page.waitForURL(url => url.pathname !== '/auth' && url.pathname !== '/', { timeout: 20_000 })
-      .catch(() => {
-        // App uses status state, URL stays at '/', but Dashboard should be visible
-      });
-
-    // Either Dashboard or Onboarding should render
-    const isDashboard = await page.getByText('Dashboard').isVisible().catch(() => false);
-    const isOnboarding = await page.getByText('Set up your profile').isVisible().catch(() => false);
-
-    expect(isDashboard || isOnboarding).toBe(true);
+    await expect(page.getByText('Dashboard')).toBeVisible({ timeout: 20_000 });
   });
 
   // ── TC-AUTH-03: Wrong password shows error ────────────────────────────────
@@ -81,7 +71,8 @@ test.describe('Authentication page', () => {
     await page.getByRole('button', { name: 'Sign up' }).click();
 
     // Sign Up form should appear
-    await expect(page.getByText('Create account')).toBeVisible();
+    // await expect(page.getByText('Create account')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Create account' })).toBeVisible();
     await expect(page.getByPlaceholder('Min. 8 characters')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Create Account' })).toBeVisible();
   });
@@ -113,7 +104,8 @@ test.describe('Authentication page', () => {
   // ── TC-AUTH-08: Switch back from Sign Up to Sign In ──────────────────────
   test('TC-AUTH-08: "Sign in" link on sign-up form returns to login', async ({ page }) => {
     await page.getByRole('button', { name: 'Sign up' }).click();
-    await expect(page.getByText('Create account')).toBeVisible();
+    // await expect(page.getByText('Create account')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Create account' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Sign in' }).click();
 
