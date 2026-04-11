@@ -4,6 +4,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 
 export class CdkStack extends cdk.Stack {
@@ -33,6 +34,7 @@ export class CdkStack extends cdk.Stack {
       pointInTimeRecoverySpecification: {
         pointInTimeRecoveryEnabled: true,
       },
+      timeToLiveAttribute: 'ttl',
       // Change to RETAIN for production environments
       removalPolicy: cdk.RemovalPolicy.DESTROY, 
     });
@@ -82,6 +84,9 @@ export class CdkStack extends cdk.Stack {
     const apiLambda = new lambda.Function(this, 'ApiLambda', {
       runtime: lambda.Runtime.NODEJS_20_X,
       handler: 'index.handler',
+      // The default timeout is 3 seconds, which is too short for the venues endpoint calls.
+      // Set to 30 seconds for the venues endpoint calls.
+      timeout: cdk.Duration.seconds(30),
       code: lambda.Code.fromAsset('../lambda', {
         exclude: ['node_modules'],
       }),
@@ -91,10 +96,21 @@ export class CdkStack extends cdk.Stack {
         MAIN_TABLE_GSI2: 'GSI2',
         ONEMAP_EMAIL: process.env.ONEMAP_EMAIL || '',
         ONEMAP_PASSWORD: process.env.ONEMAP_PASSWORD || '',
+        STAGE: stage,
       }
     });
 
     mainTable.grantReadWriteData(apiLambda);
+
+    // Allow Lambda to read secrets from SSM Parameter Store
+    apiLambda.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['ssm:GetParameter'],
+      resources: [
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/midmeet/${stage}/GOOGLE_PLACES_API_KEY`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/midmeet/${stage}/ONEMAP_EMAIL`,
+        `arn:aws:ssm:${this.region}:${this.account}:parameter/midmeet/${stage}/ONEMAP_PASSWORD`,
+      ],
+    }));
 
     // API Gateway setup
     const api = new apigateway.RestApi(this, 'EventsApi', {
@@ -143,6 +159,10 @@ export class CdkStack extends cdk.Stack {
     // POST /events/{id}/unfinalize  — creator reverts back to SCHEDULING
     const unfinalizeResource = singleEventResource.addResource('unfinalize');
     unfinalizeResource.addMethod('POST', lambdaIntegration, protectedMethodOptions);
+
+    // GET /events/{id}/venues  — fetch venue recommendations for an event
+    const venuesResource = singleEventResource.addResource('venues');
+    venuesResource.addMethod('GET', lambdaIntegration, protectedMethodOptions);
 
     // Geocode route
     const geocodeResource = api.root.addResource('geocode');

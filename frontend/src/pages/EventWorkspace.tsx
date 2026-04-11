@@ -6,7 +6,7 @@ import {
   leaveEvent,
   getDatesInRange,
 } from "../api/Event.tsx";
-import type { EventDetail, Venue, TimeSlot } from "../api/Event.tsx";
+import type { EventDetail, Venue, ParticipantTravel, TimeSlot } from "../api/Event.tsx";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ function StatusBadge({ status }: { status: EventDetail["status"] }) {
   );
 }
 
-function StarRating({ rating }: { rating: number }) {
+function StarRating({ rating }: { rating: number | null }) {
   if (rating == null) return null;
   const full = Math.round(rating);
   return (
@@ -191,8 +191,12 @@ function VotingGrid({ dates, hours, slotCounts, totalParticipants, selectedSlot,
 // ─── Venue Card ───────────────────────────────────────────────────────────────
 
 function VenueCard({ venue, canSelect, onSelect }: { venue: Venue; canSelect: boolean; onSelect: (v: Venue) => void }) {
+  const [showTravelBreakdown, setShowTravelBreakdown] = useState(false);
+  const hasParticipants = (venue.participantTravel?.length ?? 0) > 0;
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col gap-3 hover:shadow-md transition-shadow">
+      {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-gray-900 text-base leading-tight">{venue.name}</h3>
@@ -200,11 +204,46 @@ function VenueCard({ venue, canSelect, onSelect }: { venue: Venue; canSelect: bo
         </div>
         <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 text-xl">📍</div>
       </div>
-      <div className="flex items-center gap-4 text-sm text-gray-600">
+
+      {/* Stats row */}
+      <div className="flex items-center gap-4 text-sm text-gray-600 flex-wrap">
         <StarRating rating={venue.rating} />
-        <span>🗺 {venue.distanceKm?.toFixed(1)} km</span>
-        <span>⏱ ~{venue.estimatedMinutes} min</span>
+        <span>🗺 {venue.distanceKm?.toFixed(1)} km from midpoint</span>
+        <span>⏱ avg {venue.estimatedMinutes} min</span>
       </div>
+
+      {/* Fairness score badge */}
+      {venue.fairnessScore != null && (
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700">
+            ⚖ Fairness score: {venue.fairnessScore.toFixed(1)} min
+          </span>
+          <span className="text-xs text-gray-400">(lower = fairer for everyone)</span>
+        </div>
+      )}
+
+      {/* Per-participant travel time breakdown */}
+      {hasParticipants && (
+        <div>
+          <button
+            onClick={() => setShowTravelBreakdown(p => !p)}
+            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+          >
+            {showTravelBreakdown ? "▲" : "▼"} Travel times per attendee
+          </button>
+          {showTravelBreakdown && (
+            <ul className="mt-2 space-y-1">
+              {(venue.participantTravel as ParticipantTravel[]).map(pt => (
+                <li key={pt.userId} className="flex items-center justify-between text-xs text-gray-700 bg-gray-50 rounded-lg px-3 py-1.5">
+                  <span className="font-medium">{pt.name}</span>
+                  <span className="text-gray-500">~{pt.estimatedMinutes} min</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {canSelect && (
         <button
           onClick={() => onSelect(venue)}

@@ -1,3 +1,5 @@
+import { fetchAuthSession } from "aws-amplify/auth";
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 export const CURRENT_USER_ID = 'u-current';
@@ -55,13 +57,22 @@ export type CommonTime = {
   participantNames: string[];
 };
 
+export type ParticipantTravel = {
+  userId: string;
+  name: string;
+  estimatedMinutes: number;
+};
+
 export type Venue = {
   venueId: string;
   name: string;
   address: string;
-  rating: number;
+  rating: number | null;
   distanceKm: number;
   estimatedMinutes: number;
+  /** Only present on venues returned from the recommendations API (not on stored selectedVenue). */
+  fairnessScore?: number;
+  participantTravel?: ParticipantTravel[];
 };
 
 export type CreateEventInput = {
@@ -2219,11 +2230,17 @@ export async function unfinalizeEvent(eventId: string): Promise<void> {
   });
 }
 
-/** Fetch recommended venues for an event */
-export async function fetchVenues(_eventId: string): Promise<Venue[]> {
-  return new Promise(resolve => {
-    setTimeout(() => resolve([...MOCK_VENUES]), 700);
+/** Fetch recommended venues for an event from the backend (Google Places + OneMap fairness ranking). */
+export async function fetchVenues(eventId: string): Promise<Venue[]> {
+  const session = await fetchAuthSession();
+  const token = session.tokens?.idToken?.toString();
+  const apiUrl = import.meta.env.VITE_API_URL;
+  const res = await fetch(`${apiUrl}/events/${eventId}/venues`, {
+    headers: { Authorization: token || '' },
   });
+  if (!res.ok) throw new Error(`Failed to fetch venues: ${res.status}`);
+  const { data } = await res.json();
+  return data as Venue[];
 }
 
 /**

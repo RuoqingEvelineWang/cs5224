@@ -10,6 +10,7 @@ import { finalizeEvent } from "./handlers/finalizeEvent.js";
 import { confirmAttendance } from "./handlers/confirmAttendance.js";
 import { declineAttendance } from "./handlers/declineAttendance.js";
 import { unfinalizeEvent } from "./handlers/unfinalizeEvent.js";
+import { getVenues } from "./handlers/getVenues.js";
 import {
   sendFriendRequest,
   acceptFriendRequest,
@@ -130,6 +131,13 @@ export const handler = async (event) => {
       const eventId = event?.pathParameters?.id || path.split("/")[2];
       if (!eventId) throw new HttpError(400, "Missing event id.");
       const data = await unfinalizeEvent(userId, eventId, docClient);
+      return respond(200, { data, error: null });
+    }
+
+    if (method === "GET" && (resource === "/events/{id}/venues" || /^\/events\/[^/]+\/venues$/.test(path))) {
+      const eventId = event?.pathParameters?.id || path.split("/")[2];
+      if (!eventId) throw new HttpError(400, "Missing event id.");
+      const data = await getVenues(userId, eventId, docClient);
       return respond(200, { data, error: null });
     }
 
