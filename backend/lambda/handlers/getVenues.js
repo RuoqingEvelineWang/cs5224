@@ -112,7 +112,10 @@ export async function getVenues(userId, eventId, docClient) {
   const apiKey = await getGoogleApiKey();
   const rawVenues = await fetchGooglePlaces(midpoint, eventMeta.venueType, apiKey);
 
-  // 6. Geographic deduplication — keep venues at least 400m apart
+  // 6. Sort by rating (descending, nulls last) so dedup keeps highest-rated in each cluster
+  rawVenues.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+
+  // 7. Geographic deduplication — keep venues at least 150m apart
   const distinctVenues = [];
   for (const venue of rawVenues) {
     const tooClose = distinctVenues.some(
