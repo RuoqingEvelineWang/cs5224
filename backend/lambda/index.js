@@ -118,6 +118,9 @@ export const handler = async (event) => {
       const eventId = event?.pathParameters?.id || path.split("/")[2];
       if (!eventId) throw new HttpError(400, "Missing event id.");
       const data = await leaveEvent(userId, eventId, docClient);
+      return respond(200, { data, error: null });
+    }
+
     if (method === "POST" && (resource === "/events/{id}/finalize" || /^\/events\/[^/]+\/finalize$/.test(path))) {
       const eventId = event?.pathParameters?.id || path.split("/")[2];
       if (!eventId) throw new HttpError(400, "Missing event id.");
