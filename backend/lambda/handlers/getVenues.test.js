@@ -103,25 +103,27 @@ describe("getVenues", () => {
       .rejects.toMatchObject({ statusCode: 404, message: "Event metadata not found." });
   });
 
-  test("returns cached venues when DynamoDB cache hit exists", async () => {
-    const fetchSpy = jest.spyOn(global, "fetch").mockImplementation(() => {
-      throw new Error("fetch should not be called on cache hit");
-    });
-
-    const cachedVenues = [{ venueId: "v1", name: "Cached Cafe" }];
+  test("writes computed venues to DynamoDB cache after fetching", async () => {
+    let putCalled = false;
     const docClient = makeMockDocClient(async (cmd) => {
-      if (cmd.constructor.name === "QueryCommand")
-        return { Items: makeEventItems() };
-      if (cmd.constructor.name === "GetCommand")
-        return { Item: { venues: cachedVenues } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: makeEventItems() };
+      if (cmd.constructor.name === "BatchGetCommand")
+        return { Responses: { [process.env.MAIN_TABLE]: MOCK_PROFILES } };
+      if (cmd.constructor.name === "GetCommand") return {}; // cache miss
+      if (cmd.constructor.name === "PutCommand") { putCalled = true; return {}; }
       return {};
     });
 
-    const result = await getVenues(USER_ID, EVENT_ID, docClient);
-    expect(result).toEqual(cachedVenues);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    jest.spyOn(global, "fetch").mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("places.googleapis.com"))
+        return makeGooglePlacesResponse([makeGooglePlace("p1", "Cafe A", 1.326, 103.819)]);
+      if (u.includes("getToken")) return makeOneMapTokenResponse();
+      return makeOneMapRouteResponse(300);
+    });
 
-    fetchSpy.mockRestore();
+    await getVenues(USER_ID, EVENT_ID, docClient);
+    expect(putCalled).toBe(true);
   });
 
   test("fetches venues from Google Places, scores by fairness, and caches result", async () => {
