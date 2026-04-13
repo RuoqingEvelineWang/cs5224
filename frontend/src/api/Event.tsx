@@ -2182,34 +2182,16 @@ export async function joinEvent(eventId: string): Promise<void> {
   });
 }
 
-/**
- * Leave an event.
- * Private events: user is moved to pendingUserIds (can rejoin later).
- * Creator cannot leave.
- */
+/** Leave an event. Creator cannot leave. */
 export async function leaveEvent(eventId: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      const events = readEventStore();
-      const idx = events.findIndex(e => e.eventId === eventId);
-      if (idx === -1) { reject(new Error('Event not found')); return; }
-      const ev = events[idx];
-      if (ev.creatorId === CURRENT_USER_ID) {
-        reject(new Error('Creator cannot leave their own event')); return;
-      }
-      const currentPending = ev.pendingUserIds ?? [];
-      const newEvents = [...events];
-      newEvents[idx] = {
-        ...ev,
-        participants: ev.participants.filter(p => p.userId !== CURRENT_USER_ID),
-        pendingUserIds: currentPending.includes(CURRENT_USER_ID)
-          ? currentPending
-          : [...currentPending, CURRENT_USER_ID],
-      };
-      writeEventStore(newEvents);
-      resolve();
-    }, 300);
+  const session = await fetchAuthSession();
+  const token = session.tokens?.idToken?.toString();
+  const apiUrl = import.meta.env.VITE_API_URL;
+  const res = await fetch(`${apiUrl}/events/${eventId}/leave`, {
+    method: 'POST',
+    headers: { Authorization: token || '' },
   });
+  if (!res.ok) throw new Error(`Failed to leave event: ${res.status}`);
 }
 
 /** Revert a FINALIZED event back to SCHEDULING (creator only) */

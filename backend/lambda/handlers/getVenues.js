@@ -1,12 +1,13 @@
 import { QueryCommand, BatchGetCommand, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
+import { createHash } from "node:crypto";
 
 const TABLE_NAME = process.env.MAIN_TABLE;
 const STAGE = process.env.STAGE || 'dev';
 const VENUE_CACHE_TTL_SECONDS = 86400; // 24 hours
 const SEARCH_RADIUS_METERS = 3000;
 const MAX_VENUES = 10;
-const DEDUP_MIN_DISTANCE_METERS = 400;
+const DEDUP_MIN_DISTANCE_METERS = 120;
 
 const ssmClient = new SSMClient({});
 
@@ -71,16 +72,7 @@ export async function getVenues(userId, eventId, docClient) {
     throw new HttpError(409, `Venues can only be fetched when the event is in SCHEDULING status (current: ${eventMeta.status}).`);
   }
 
-  // 2. Check DynamoDB venue cache
-  const cached = await docClient.send(new GetCommand({
-    TableName: TABLE_NAME,
-    Key: { PK: `VENUE_CACHE#${eventId}`, SK: 'DATA' },
-  }));
-  if (cached.Item?.venues) {
-    return cached.Item.venues;
-  }
-
-  // 3. Fetch participant profiles to get lat/lng and transportType
+  // 2. Fetch participant profiles to get lat/lng and transportType
   const participantUserIds = members.map(m => m.SK.replace('USER#', ''));
   const uniqueUserIds = [...new Set([eventMeta.creatorId, ...participantUserIds])];
 
@@ -91,7 +83,6 @@ export async function getVenues(userId, eventId, docClient) {
 
   const profiles = profileBatch.Responses?.[TABLE_NAME] || [];
 
-  // Only include participants who have a location set
   const users = profiles
     .filter(p => p.lat != null && p.lng != null)
     .map(p => ({
@@ -105,14 +96,29 @@ export async function getVenues(userId, eventId, docClient) {
     throw new HttpError(422, "No participants have set their location. Ask participants to update their profile with a postal code.");
   }
 
-  // 4. Calculate geographic midpoint
+  // 3. Compute fingerprint from inputs that affect recommendations
+  const fingerprint = computeFingerprint(users, eventMeta.venueType);
+
+  // 4. Check DynamoDB venue cache — return only if fingerprint matches
+  const cached = await docClient.send(new GetCommand({
+    TableName: TABLE_NAME,
+    Key: { PK: `VENUE_CACHE#${eventId}`, SK: 'DATA' },
+  }));
+  if (cached.Item?.venues && cached.Item.fingerprint === fingerprint) {
+    return cached.Item.venues;
+  }
+
+  // 5. Calculate geographic midpoint
   const midpoint = calculateMidpoint(users);
 
   // 5. Fetch candidate venues from Google Places
   const apiKey = await getGoogleApiKey();
   const rawVenues = await fetchGooglePlaces(midpoint, eventMeta.venueType, apiKey);
 
-  // 6. Geographic deduplication — keep venues at least 400m apart
+  // 6. Sort by rating (descending, nulls last) so dedup keeps highest-rated in each cluster
+  rawVenues.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+
+  // 7. Geographic deduplication — keep venues at least 150m apart
   const distinctVenues = [];
   for (const venue of rawVenues) {
     const tooClose = distinctVenues.some(
@@ -152,13 +158,14 @@ export async function getVenues(userId, eventId, docClient) {
   // 8. Sort by fairness score ascending (lower = fairer + closer)
   scoredVenues.sort((a, b) => a.fairnessScore - b.fairnessScore);
 
-  // 9. Write to DynamoDB cache with TTL
+  // 9. Write to DynamoDB cache with fingerprint + TTL
   await docClient.send(new PutCommand({
     TableName: TABLE_NAME,
     Item: {
       PK: `VENUE_CACHE#${eventId}`,
       SK: 'DATA',
       venues: scoredVenues,
+      fingerprint,
       ttl: Math.floor(Date.now() / 1000) + VENUE_CACHE_TTL_SECONDS,
     },
   }));
@@ -291,6 +298,22 @@ async function getTravelTime(origin, destination, transportType) {
 }
 
 // ─── Shared Utilities ─────────────────────────────────────────────────────────
+
+
+/**
+ * Produces a short hash of all inputs that affect venue recommendations.
+ * The cached results are only reused when this fingerprint matches, so
+ * any change — a participant joining/leaving, moving house, switching
+ * transport mode, or the event's venueType changing — automatically
+ * invalidates the cache without touching other handlers.
+ */
+function computeFingerprint(users, venueType) {
+  const sorted = [...users]
+    .sort((a, b) => a.userId.localeCompare(b.userId))
+    .map(u => `${u.userId}:${u.coordinates.lat},${u.coordinates.lng}:${u.transportType}`);
+  const payload = JSON.stringify({ venueType, participants: sorted });
+  return createHash('sha256').update(payload).digest('hex').slice(0, 16);
+}
 
 function calculateMidpoint(users) {
   const totalLat = users.reduce((sum, u) => sum + u.coordinates.lat, 0);
