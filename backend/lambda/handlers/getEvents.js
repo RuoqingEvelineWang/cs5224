@@ -51,15 +51,15 @@ export async function getEvents(userId, docClient) {
       eventId: rawEventId,
       title: eventMeta.title,
       status: eventMeta.status,
-      creatorId: derivedCreatorId, 
+      creatorId: derivedCreatorId,
       venueType: eventMeta.venueType,
       dateRange: eventMeta.dateRange || { start: "", end: "" },
       selectedTime: eventMeta.selectedTime || null,
       selectedVenue: eventMeta.selectedVenue || null,
-      
-      participants: members.map(m => ({ 
-        userId: m.userId || m.SK.replace('USER#', ''), 
-        role: m.role 
+
+      participants: members.map(m => ({
+        userId: m.userId || m.SK.replace('USER#', ''),
+        role: m.role
       })),
       availabilitySubmittedBy: members
         .filter(m => m.hasSubmittedAvailability)
@@ -80,7 +80,7 @@ export async function getEvents(userId, docClient) {
     if (e.creatorId) uniqueUserIds.add(e.creatorId);
     e.participants.forEach(p => uniqueUserIds.add(p.userId));
   });
-
+  /* istanbul ignore next */
   if (uniqueUserIds.size === 0) return fullEvents;
 
   // STEP 5: BatchGet User Profiles

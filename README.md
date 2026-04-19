@@ -97,13 +97,13 @@ If no stage is provided, `cdk-stack.ts` defaults to `dev`.
 5. If you pull new changes and `package-lock.json` has changed, run `npm ci` again inside **/frontend**.
 6. If you intentionally add or upgrade frontend dependencies, use `npm install <package-name>` inside **/frontend**, then commit both `package.json` and `package-lock.json`.
 
-## Testing
-Tests and Evaluation are maintained in the `junxian-testing` branch. Please switch before run the tests.
+## Testing Strategies and Outcomes
 ### Unit Test
-See the `/backend/lambda/Testing.md` for setup and usage instructions, and the latest coverage report.
+
+See the [Unit Test](/backend/lambda/Testing.md) for setup and usage instructions, and the latest coverage report.
 
 ### Performance Test
-See the `/performance_tests/Testing.md` for setup and usage instructions, and performace testing report.
+See the [Performance Test](/performance_tests/Testing.md) for setup and usage instructions, and performace testing report.
 
 ### UI E2E Test
-See the `/frontend/Testing.md` for setup and usage instructions, and UI E2E testing report.
+See the [UI E2E Test](/frontend/Testing.md) for setup and usage instructions, and UI E2E testing report.

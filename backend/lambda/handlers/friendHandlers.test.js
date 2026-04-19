@@ -1,305 +1,803 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+/**
+ * friendHandlers.test.js
+ *
+ * Coverage targets:
+ *   sendFriendRequest, acceptFriendRequest, declineFriendRequest,
+ *   listFriendsByUserId, listFriendSuggestions
+ *
+ * Notes:
+ * - docClient is injected as a parameter; send() is mocked directly.
+ * - TransactWriteCommand failures are simulated by throwing an Error
+ *   with the appropriate name property.
+ * - Pagination in listFriendSuggestions is controlled via LastEvaluatedKey.
+ */
 
-process.env.MAIN_TABLE = "test-main";
-
-const {
+import {
   sendFriendRequest,
+  acceptFriendRequest,
   declineFriendRequest,
+  listFriendsByUserId,
   listFriendSuggestions,
-} = await import("./friendHandlers.js");
+} from "./friendHandlers.js";
 
-function createDocClient(handler) {
-  const calls = [];
-  return {
-    calls,
-    client: {
-      async send(command) {
-        calls.push(command);
-        return handler(command);
-      },
-    },
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function makeMockDocClient(sendImpl) {
+  return { send: jest.fn(sendImpl) };
+}
+
+/** Simulates a DynamoDB TransactionCanceledException. */
+function makeTransactionCanceledError() {
+  const err = new Error("Transaction canceled");
+  err.name = "TransactionCanceledException";
+  return err;
+}
+
+// ─── sendFriendRequest ───────────────────────────────────────────────────────
+
+describe("sendFriendRequest", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test("creates bidirectional PENDING records and returns success message", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return {};
+      return {};
+    });
+
+    const result = await sendFriendRequest(
+      "user-a",
+      { targetUserId: "user-b" },
+      docClient
+    );
+
+    expect(result).toEqual({ message: "Friend request sent." });
+  });
+
+  test("uses profile.name as snapshot name when profiles exist", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") {
+        const key = cmd.input.Key;
+        if (key.SK === "PROFILE" && key.PK === "USER#user-a")
+          return { Item: { name: "Alice Profile" } };
+        if (key.SK === "PROFILE" && key.PK === "USER#user-b")
+          return { Item: { name: "Bob Profile" } };
+        return {}; // no existing relationship
+      }
+      return {};
+    });
+
+    await sendFriendRequest(
+      "user-a",
+      { targetUserId: "user-b", requesterName: "Alice Fallback", targetName: "Bob Fallback" },
+      docClient
+    );
+
+    const transactCall = docClient.send.mock.calls.find(
+      (c) => c[0].constructor.name === "TransactWriteCommand"
+    );
+    const items = transactCall[0].input.TransactItems;
+    expect(items[0].Put.Item.name).toBe("Bob Profile");
+    expect(items[1].Put.Item.name).toBe("Alice Profile");
+  });
+
+  test("falls back to body snapshot name when profiles are missing", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return {};
+      return {};
+    });
+
+    await sendFriendRequest(
+      "user-a",
+      { targetUserId: "user-b", requesterName: "Alice Fallback", targetName: "Bob Fallback" },
+      docClient
+    );
+
+    const transactCall = docClient.send.mock.calls.find(
+      (c) => c[0].constructor.name === "TransactWriteCommand"
+    );
+    const items = transactCall[0].input.TransactItems;
+    expect(items[0].Put.Item.name).toBe("Bob Fallback");
+    expect(items[1].Put.Item.name).toBe("Alice Fallback");
+  });
+
+  test("sets requestedBy to the sender's userId on both records", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return {};
+      return {};
+    });
+
+    await sendFriendRequest("user-a", { targetUserId: "user-b" }, docClient);
+
+    const transactCall = docClient.send.mock.calls.find(
+      (c) => c[0].constructor.name === "TransactWriteCommand"
+    );
+    const items = transactCall[0].input.TransactItems;
+    expect(items[0].Put.Item.requestedBy).toBe("user-a");
+    expect(items[1].Put.Item.requestedBy).toBe("user-a");
+  });
+
+  test("throws 400 when targetUserId is empty", async () => {
+    const docClient = makeMockDocClient(async () => ({}));
+
+    await expect(
+      sendFriendRequest("user-a", { targetUserId: "" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 400, message: "targetUserId is required." });
+  });
+
+  test("throws 400 when sending a request to oneself", async () => {
+    const docClient = makeMockDocClient(async () => ({}));
+
+    await expect(
+      sendFriendRequest("user-a", { targetUserId: "user-a" }, docClient)
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "You cannot send a friend request to yourself.",
+    });
+  });
+
+  test("throws 409 when users are already friends (ACCEPTED)", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { status: "ACCEPTED", requestedBy: "user-b" } };
+      return {};
+    });
+
+    await expect(
+      sendFriendRequest("user-a", { targetUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 409, message: "You are already friends with this user." });
+  });
+
+  test("throws 409 when an outgoing PENDING request already exists", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { status: "PENDING", requestedBy: "user-a" } };
+      return {};
+    });
+
+    await expect(
+      sendFriendRequest("user-a", { targetUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 409, message: "Friend request already sent." });
+  });
+
+  test("throws 409 and suggests accepting when an incoming PENDING request exists", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { status: "PENDING", requestedBy: "user-b" } };
+      return {};
+    });
+
+    await expect(
+      sendFriendRequest("user-a", { targetUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Incoming request exists. Please accept it instead.",
+    });
+  });
+
+  test("maps TransactionCanceledException to 409", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return {};
+      throw makeTransactionCanceledError();
+    });
+
+    await expect(
+      sendFriendRequest("user-a", { targetUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 409, message: "Friend request already exists." });
+  });
+
+  test("propagates unexpected DynamoDB errors", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return {};
+      throw new Error("Network failure");
+    });
+
+    await expect(
+      sendFriendRequest("user-a", { targetUserId: "user-b" }, docClient)
+    ).rejects.toThrow("Network failure");
+  });
+});
+
+// ─── acceptFriendRequest ─────────────────────────────────────────────────────
+
+describe("acceptFriendRequest", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const PENDING_INCOMING = {
+    Item: { status: "PENDING", requestedBy: "user-b" },
   };
-}
 
-function commandName(command) {
-  return command?.constructor?.name || "";
-}
-
-test("sendFriendRequest creates bidirectional pending records and snapshots payload names when profiles are missing", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
+  test("updates both records to ACCEPTED and returns success message", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return PENDING_INCOMING;
       return {};
-    }
-    if (commandName(command) === "TransactWriteCommand") {
+    });
+
+    const result = await acceptFriendRequest(
+      "user-a",
+      { requesterUserId: "user-b" },
+      docClient
+    );
+
+    expect(result).toEqual({ message: "Friend request accepted." });
+
+    const transactCall = docClient.send.mock.calls.find(
+      (c) => c[0].constructor.name === "TransactWriteCommand"
+    );
+    const items = transactCall[0].input.TransactItems;
+    expect(items).toHaveLength(2);
+    expect(items[0].Update.ExpressionAttributeValues[":accepted"]).toBe("ACCEPTED");
+    expect(items[1].Update.ExpressionAttributeValues[":accepted"]).toBe("ACCEPTED");
+  });
+
+  test("throws 400 when requesterUserId is empty", async () => {
+    const docClient = makeMockDocClient(async () => ({}));
+
+    await expect(
+      acceptFriendRequest("user-a", { requesterUserId: "" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 400, message: "requesterUserId is required." });
+  });
+
+  test("throws 400 when requesterUserId equals own userId", async () => {
+    const docClient = makeMockDocClient(async () => ({}));
+
+    await expect(
+      acceptFriendRequest("user-a", { requesterUserId: "user-a" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 400, message: "Invalid requesterUserId." });
+  });
+
+  test("throws 404 when the relationship does not exist", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return {};
       return {};
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
+    });
+
+    await expect(
+      acceptFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 404, message: "Friend request not found." });
   });
 
-  const response = await sendFriendRequest(
-    "user-a",
-    {
-      targetUserId: "user-b",
-      requesterName: "Alice Fallback",
-      targetName: "Bob Fallback",
-    },
-    client
-  );
-  assert.equal(response.message, "Friend request sent.");
+  test("throws 409 when users are already friends (ACCEPTED)", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { status: "ACCEPTED", requestedBy: "user-b" } };
+      return {};
+    });
 
-  assert.equal(calls.length, 4);
-  assert.equal(commandName(calls[0]), "GetCommand");
-  assert.deepEqual(calls[0].input.Key, {
-    PK: "USER#user-a",
-    SK: "FRIEND#user-b",
+    await expect(
+      acceptFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 409, message: "You are already friends with this user." });
   });
 
-  assert.equal(commandName(calls[1]), "GetCommand");
-  assert.deepEqual(calls[1].input.Key, {
-    PK: "USER#user-a",
-    SK: "PROFILE",
+  test("throws 400 when the request was not sent by requesterUserId (not an incoming request)", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { status: "PENDING", requestedBy: "user-a" } };
+      return {};
+    });
+
+    await expect(
+      acceptFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Only incoming friend requests can be accepted.",
+    });
   });
-  assert.equal(commandName(calls[2]), "GetCommand");
-  assert.deepEqual(calls[2].input.Key, {
-    PK: "USER#user-b",
-    SK: "PROFILE",
+
+  test("maps TransactionCanceledException to 404", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return PENDING_INCOMING;
+      throw makeTransactionCanceledError();
+    });
+
+    await expect(
+      acceptFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 404, message: "Friend request not found." });
   });
 
-  assert.equal(commandName(calls[3]), "TransactWriteCommand");
-  const transactItems = calls[3].input.TransactItems;
-  assert.equal(transactItems.length, 2);
+  test("propagates unexpected DynamoDB errors during accept", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return PENDING_INCOMING;
+      throw new Error("Unexpected failure");
+    });
 
-  assert.equal(transactItems[0].Put.Item.PK, "USER#user-a");
-  assert.equal(transactItems[0].Put.Item.SK, "FRIEND#user-b");
-  assert.equal(transactItems[0].Put.Item.status, "PENDING");
-  assert.equal(transactItems[0].Put.Item.requestedBy, "user-a");
-  assert.equal(transactItems[0].Put.Item.name, "Bob Fallback");
-
-  assert.equal(transactItems[1].Put.Item.PK, "USER#user-b");
-  assert.equal(transactItems[1].Put.Item.SK, "FRIEND#user-a");
-  assert.equal(transactItems[1].Put.Item.status, "PENDING");
-  assert.equal(transactItems[1].Put.Item.requestedBy, "user-a");
-  assert.equal(transactItems[1].Put.Item.name, "Alice Fallback");
+    await expect(
+      acceptFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toThrow("Unexpected failure");
+  });
 });
 
-test("sendFriendRequest prefers profile names over payload snapshots", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
-      const key = command.input.Key;
-      if (key.SK === "PROFILE" && key.PK === "USER#user-a") {
-        return { Item: { PK: key.PK, SK: key.SK, name: "Alice Profile" } };
+// ─── declineFriendRequest ────────────────────────────────────────────────────
+
+describe("declineFriendRequest", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const PENDING_INCOMING = {
+    Item: { status: "PENDING", requestedBy: "user-b" },
+  };
+
+  test("deletes both records and returns success message", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return PENDING_INCOMING;
+      return {};
+    });
+
+    const result = await declineFriendRequest(
+      "user-a",
+      { requesterUserId: "user-b" },
+      docClient
+    );
+
+    expect(result).toEqual({ message: "Friend request declined." });
+
+    const transactCall = docClient.send.mock.calls.find(
+      (c) => c[0].constructor.name === "TransactWriteCommand"
+    );
+    const items = transactCall[0].input.TransactItems;
+    expect(items).toHaveLength(2);
+    expect(items[0].Delete.Key).toEqual({ PK: "USER#user-a", SK: "FRIEND#user-b" });
+    expect(items[1].Delete.Key).toEqual({ PK: "USER#user-b", SK: "FRIEND#user-a" });
+  });
+
+  test("throws 400 when requesterUserId is empty", async () => {
+    const docClient = makeMockDocClient(async () => ({}));
+
+    await expect(
+      declineFriendRequest("user-a", { requesterUserId: "" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 400, message: "requesterUserId is required." });
+  });
+
+  test("throws 400 when requesterUserId equals own userId", async () => {
+    const docClient = makeMockDocClient(async () => ({}));
+
+    await expect(
+      declineFriendRequest("user-a", { requesterUserId: "user-a" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 400, message: "Invalid requesterUserId." });
+  });
+
+  test("throws 404 when the relationship does not exist", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return {};
+      return {};
+    });
+
+    await expect(
+      declineFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 404, message: "Friend request not found." });
+  });
+
+  test("throws 409 when the relationship is not in PENDING state", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { status: "ACCEPTED", requestedBy: "user-b" } };
+      return {};
+    });
+
+    await expect(
+      declineFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Friend relationship is not in a pending state.",
+    });
+  });
+
+  test("throws 400 when the request was not incoming", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { status: "PENDING", requestedBy: "user-a" } };
+      return {};
+    });
+
+    await expect(
+      declineFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({
+      statusCode: 400,
+      message: "Only incoming friend requests can be declined.",
+    });
+  });
+
+  test("maps TransactionCanceledException to 404", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return PENDING_INCOMING;
+      throw makeTransactionCanceledError();
+    });
+
+    await expect(
+      declineFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toMatchObject({ statusCode: 404, message: "Friend request not found." });
+  });
+
+  test("propagates unexpected DynamoDB errors during decline", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return PENDING_INCOMING;
+      throw new Error("Unexpected failure");
+    });
+
+    await expect(
+      declineFriendRequest("user-a", { requesterUserId: "user-b" }, docClient)
+    ).rejects.toThrow("Unexpected failure");
+  });
+});
+
+// ─── listFriendsByUserId ──────────────────────────────────────────────────────
+
+describe("listFriendsByUserId", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test("handles absent Responses key in BatchGetCommand result", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand")
+        return {
+          Items: [{
+            SK: "FRIEND#user-b", friendId: "user-b",
+            status: "ACCEPTED", requestedBy: "user-b"
+          }]
+        };
+      // Responses exists but TABLE_NAME key is absent
+      if (cmd.constructor.name === "BatchGetCommand")
+        return { Responses: {} };
+    });
+
+    const result = await listFriendsByUserId("user-a", docClient);
+    expect(result.friends[0].userId).toBe("user-b");
+  });
+
+  test("splits BatchGet into two calls when friend count exceeds 100", async () => {
+    const manyFriendIds = Array.from({ length: 101 }, (_, i) => `user-${i}`);
+    const friendItems = manyFriendIds.map((id) => ({
+      SK: `FRIEND#${id}`,
+      friendId: id,
+      status: "ACCEPTED",
+      requestedBy: id,
+    }));
+
+    let batchCallCount = 0;
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand") return { Items: friendItems };
+      if (cmd.constructor.name === "BatchGetCommand") {
+        batchCallCount++;
+        return { Responses: { [process.env.MAIN_TABLE]: [] } };
       }
-      if (key.SK === "PROFILE" && key.PK === "USER#user-b") {
-        return { Item: { PK: key.PK, SK: key.SK, name: "Bob Profile" } };
+    });
+
+    await listFriendsByUserId("user-a", docClient);
+    expect(batchCallCount).toBe(2);
+  });
+
+  test("categorises relationships into friends, outgoing and incoming correctly", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand") {
+        return {
+          Items: [
+            { PK: "USER#user-a", SK: "FRIEND#user-b", friendId: "user-b", status: "ACCEPTED", requestedBy: "user-b" },
+            { PK: "USER#user-a", SK: "FRIEND#user-c", friendId: "user-c", status: "PENDING", requestedBy: "user-a" },
+            { PK: "USER#user-a", SK: "FRIEND#user-d", friendId: "user-d", status: "PENDING", requestedBy: "user-d" },
+          ],
+        };
       }
+      if (cmd.constructor.name === "BatchGetCommand") {
+        return {
+          Responses: {
+            [process.env.MAIN_TABLE]: [
+              { PK: "USER#user-b", SK: "PROFILE", userId: "user-b", name: "Bob" },
+              { PK: "USER#user-c", SK: "PROFILE", userId: "user-c", name: "Carol" },
+              { PK: "USER#user-d", SK: "PROFILE", userId: "user-d", name: "Dave" },
+            ],
+          },
+        };
+      }
+    });
+
+    const result = await listFriendsByUserId("user-a", docClient);
+
+    expect(result.friends).toHaveLength(1);
+    expect(result.friends[0].userId).toBe("user-b");
+
+    expect(result.outgoingRequests).toHaveLength(1);
+    expect(result.outgoingRequests[0].userId).toBe("user-c");
+
+    expect(result.incomingRequests).toHaveLength(1);
+    expect(result.incomingRequests[0].userId).toBe("user-d");
+  });
+
+  test("returns three empty arrays when there are no relationships", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      return { Responses: { [process.env.MAIN_TABLE]: [] } };
+    });
+
+    const result = await listFriendsByUserId("user-a", docClient);
+
+    expect(result.friends).toEqual([]);
+    expect(result.incomingRequests).toEqual([]);
+    expect(result.outgoingRequests).toEqual([]);
+  });
+
+  test("falls back to item.name then friendId when profile is absent", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand") {
+        return {
+          Items: [
+            { PK: "USER#user-a", SK: "FRIEND#user-b", friendId: "user-b", status: "ACCEPTED", requestedBy: "user-b", name: "Bob Snapshot" },
+          ],
+        };
+      }
+      // BatchGet returns empty
+      return { Responses: { [process.env.MAIN_TABLE]: [] } };
+    });
+
+    const result = await listFriendsByUserId("user-a", docClient);
+
+    expect(result.friends[0].name).toBe("Bob Snapshot");
+  });
+
+  test("sorts the friends list alphabetically by name", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand") {
+        return {
+          Items: [
+            { SK: "FRIEND#user-z", friendId: "user-z", status: "ACCEPTED", requestedBy: "user-z" },
+            { SK: "FRIEND#user-a2", friendId: "user-a2", status: "ACCEPTED", requestedBy: "user-a2" },
+          ],
+        };
+      }
+      return {
+        Responses: {
+          [process.env.MAIN_TABLE]: [
+            { PK: "USER#user-z", userId: "user-z", name: "Zoe" },
+            { PK: "USER#user-a2", userId: "user-a2", name: "Amy" },
+          ],
+        },
+      };
+    });
+
+    const result = await listFriendsByUserId("user-a", docClient);
+
+    expect(result.friends[0].name).toBe("Amy");
+    expect(result.friends[1].name).toBe("Zoe");
+  });
+
+  test("derives friendId from SK when friendId field is absent", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand") {
+        return {
+          // No friendId field — only SK present
+          Items: [{ SK: "FRIEND#user-b", status: "ACCEPTED", requestedBy: "user-b" }],
+        };
+      }
+      return { Responses: { [process.env.MAIN_TABLE]: [] } };
+    });
+
+    const result = await listFriendsByUserId("user-a", docClient);
+
+    expect(result.friends[0].userId).toBe("user-b");
+  });
+
+  test("handles missing Responses in BatchGetCommand result gracefully", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand")
+        return { Items: [{ SK: "FRIEND#user-b", friendId: "user-b", status: "ACCEPTED", requestedBy: "user-b" }] };
+      return { Responses: {} }; // TABLE_NAME key absent
+    });
+
+    const result = await listFriendsByUserId("user-a", docClient);
+    expect(result.friends[0].userId).toBe("user-b");
+  });
+
+  test("splits BatchGet into two calls when friend count exceeds 100", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `user-${i}`);
+    const items = ids.map((id) => ({ SK: `FRIEND#${id}`, friendId: id, status: "ACCEPTED", requestedBy: id }));
+
+    let batchCount = 0;
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "QueryCommand") return { Items: items };
+      if (cmd.constructor.name === "BatchGetCommand") {
+        batchCount++;
+        return { Responses: { [process.env.MAIN_TABLE]: [] } };
+      }
+    });
+
+    await listFriendsByUserId("user-a", docClient);
+    expect(batchCount).toBe(2);
+  });
+});
+
+// ─── listFriendSuggestions ───────────────────────────────────────────────────
+
+describe("listFriendSuggestions", () => {
+  beforeEach(() => jest.clearAllMocks());
+  test("derives candidateUserId from PK when userId field is absent in scan result", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton"] } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      if (cmd.constructor.name === "ScanCommand") {
+        return {
+          Items: [
+            // No userId field — only PK
+            { PK: "USER#user-b", SK: "PROFILE", name: "Bob", interests: ["Badminton"] },
+          ],
+        };
+      }
+    });
+
+    const result = await listFriendSuggestions("user-a", docClient);
+    expect(result.suggestions[0].userId).toBe("user-b");
+  });
+
+  test("returns no suggestions when there are no common interests", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton"] } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      if (cmd.constructor.name === "ScanCommand") {
+        return {
+          Items: [{ PK: "USER#user-b", userId: "user-b", name: "Bob", interests: ["Swimming"] }],
+        };
+      }
+    });
+
+    const result = await listFriendSuggestions("user-a", docClient);
+
+    expect(result.suggestions).toEqual([]);
+  });
+
+  test("ranks suggestions by Jaccard score descending", async () => {
+    // user-b: 1 common / 2 union = 0.5
+    // user-c: 2 common / 3 union ≈ 0.667
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton", "Cycling"] } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      if (cmd.constructor.name === "ScanCommand") {
+        return {
+          Items: [
+            { PK: "USER#user-b", userId: "user-b", name: "Bob", interests: ["Badminton", "Swimming"] },
+            { PK: "USER#user-c", userId: "user-c", name: "Carol", interests: ["Badminton", "Cycling", "Yoga"] },
+          ],
+        };
+      }
+    });
+
+    const result = await listFriendSuggestions("user-a", docClient);
+
+    expect(result.suggestions[0].userId).toBe("user-c");
+    expect(result.suggestions[0].score).toBeCloseTo(0.6667, 3);
+    expect(result.suggestions[1].userId).toBe("user-b");
+    expect(result.suggestions[1].score).toBeCloseTo(0.3333, 3);
+  });
+
+  test("excludes users who already have a relationship (friend or pending)", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton"] } };
+      if (cmd.constructor.name === "QueryCommand")
+        return { Items: [{ SK: "FRIEND#user-b", friendId: "user-b", status: "ACCEPTED" }] };
+      if (cmd.constructor.name === "ScanCommand") {
+        return {
+          Items: [{ PK: "USER#user-b", userId: "user-b", name: "Bob", interests: ["Badminton"] }],
+        };
+      }
+    });
+
+    const result = await listFriendSuggestions("user-a", docClient);
+
+    expect(result.suggestions).toHaveLength(0);
+  });
+
+  test("excludes the requesting user from suggestions", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton"] } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      if (cmd.constructor.name === "ScanCommand") {
+        return {
+          // Scan result includes the requesting user itself
+          Items: [{ PK: "USER#user-a", userId: "user-a", name: "Self", interests: ["Badminton"] }],
+        };
+      }
+    });
+
+    const result = await listFriendSuggestions("user-a", docClient);
+
+    expect(result.suggestions).toHaveLength(0);
+  });
+
+  test("returns empty suggestions when the user profile does not exist", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand") return {};
       return {};
-    }
-    if (commandName(command) === "TransactWriteCommand") {
-      return {};
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
+    });
+
+    const result = await listFriendSuggestions("user-a", docClient);
+
+    expect(result).toEqual({ userId: "user-a", suggestions: [] });
+    // No further DynamoDB calls should be made
+    expect(docClient.send).toHaveBeenCalledTimes(1);
   });
 
-  await sendFriendRequest(
-    "user-a",
-    {
-      targetUserId: "user-b",
-      requesterName: "Alice Payload",
-      targetName: "Bob Payload",
-    },
-    client
-  );
+  test("continues scanning until LastEvaluatedKey is absent (pagination)", async () => {
+    let scanCount = 0;
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton"] } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      if (cmd.constructor.name === "ScanCommand") {
+        scanCount++;
+        if (scanCount === 1) {
+          return {
+            Items: [{ PK: "USER#user-b", userId: "user-b", name: "Bob", interests: ["Badminton"] }],
+            LastEvaluatedKey: { PK: "USER#user-b" },
+          };
+        }
+        return {
+          Items: [{ PK: "USER#user-c", userId: "user-c", name: "Carol", interests: ["Badminton"] }],
+          // No LastEvaluatedKey — pagination ends
+        };
+      }
+    });
 
-  const transactItems = calls[3].input.TransactItems;
-  assert.equal(transactItems[0].Put.Item.name, "Bob Profile");
-  assert.equal(transactItems[1].Put.Item.name, "Alice Profile");
-});
+    const result = await listFriendSuggestions("user-a", docClient);
 
-test("sendFriendRequest returns 409 when request already sent by requester", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
-      return {
-        Item: {
-          PK: "USER#user-a",
-          SK: "FRIEND#user-b",
-          status: "PENDING",
-          requestedBy: "user-a",
-        },
-      };
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
+    expect(scanCount).toBe(2);
+    expect(result.suggestions).toHaveLength(2);
   });
 
-  await assert.rejects(
-    () => sendFriendRequest("user-a", { targetUserId: "user-b" }, client),
-    (error) => {
-      assert.equal(error.statusCode, 409);
-      assert.equal(error.message, "Friend request already sent.");
-      return true;
-    }
-  );
+  test("sorts by name alphabetically when Jaccard scores are equal", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton"] } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      if (cmd.constructor.name === "ScanCommand") {
+        return {
+          Items: [
+            { PK: "USER#user-z", userId: "user-z", name: "Zoe", interests: ["Badminton"] },
+            { PK: "USER#user-m", userId: "user-m", name: "Milly", interests: ["Badminton"] },
+          ],
+        };
+      }
+    });
 
-  assert.equal(calls.length, 1);
-});
+    const result = await listFriendSuggestions("user-a", docClient);
 
-test("sendFriendRequest returns 409 when users are already friends", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
-      return {
-        Item: {
-          PK: "USER#user-a",
-          SK: "FRIEND#user-b",
-          status: "ACCEPTED",
-          requestedBy: "user-b",
-        },
-      };
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
+    expect(result.suggestions[0].name).toBe("Milly");
+    expect(result.suggestions[1].name).toBe("Zoe");
   });
 
-  await assert.rejects(
-    () => sendFriendRequest("user-a", { targetUserId: "user-b" }, client),
-    (error) => {
-      assert.equal(error.statusCode, 409);
-      assert.equal(error.message, "You are already friends with this user.");
-      return true;
-    }
-  );
+  test("commonInterests contains deduplicated shared interests", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton", "Cycling"] } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      if (cmd.constructor.name === "ScanCommand") {
+        return {
+          Items: [{ PK: "USER#user-b", userId: "user-b", name: "Bob", interests: ["Badminton", "Cycling", "Yoga"] }],
+        };
+      }
+    });
 
-  assert.equal(calls.length, 1);
-});
+    const result = await listFriendSuggestions("user-a", docClient);
 
-test("sendFriendRequest returns 409 when incoming pending request already exists", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
-      return {
-        Item: {
-          PK: "USER#user-a",
-          SK: "FRIEND#user-b",
-          status: "PENDING",
-          requestedBy: "user-b",
-        },
-      };
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
+    expect(result.suggestions[0].commonInterests).toEqual(["badminton", "cycling"]);
   });
 
-  await assert.rejects(
-    () => sendFriendRequest("user-a", { targetUserId: "user-b" }, client),
-    (error) => {
-      assert.equal(error.statusCode, 409);
-      assert.equal(error.message, "Incoming request exists. Please accept it instead.");
-      return true;
-    }
-  );
+  test("derives candidateUserId from PK when userId field is absent", async () => {
+    const docClient = makeMockDocClient(async (cmd) => {
+      if (cmd.constructor.name === "GetCommand")
+        return { Item: { userId: "user-a", interests: ["Badminton"] } };
+      if (cmd.constructor.name === "QueryCommand") return { Items: [] };
+      if (cmd.constructor.name === "ScanCommand")
+        return {
+          Items: [{
+            PK: "USER#user-b",
+            SK: "PROFILE",
+            name: "Bob",
+            interests: ["Badminton"],
+            // explicitly no userId field
+          }],
+        };
+    });
 
-  assert.equal(calls.length, 1);
-});
-
-test("declineFriendRequest deletes both pending records for an incoming request", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
-      return {
-        Item: {
-          PK: "USER#user-b",
-          SK: "FRIEND#user-a",
-          status: "PENDING",
-          requestedBy: "user-a",
-        },
-      };
-    }
-    if (commandName(command) === "TransactWriteCommand") {
-      return {};
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
+    const result = await listFriendSuggestions("user-a", docClient);
+    expect(result.suggestions[0].userId).toBe("user-b");
   });
-
-  const response = await declineFriendRequest("user-b", { requesterUserId: "user-a" }, client);
-  assert.equal(response.message, "Friend request declined.");
-
-  assert.equal(calls.length, 2);
-  assert.equal(commandName(calls[1]), "TransactWriteCommand");
-  const transactItems = calls[1].input.TransactItems;
-  assert.equal(transactItems.length, 2);
-  assert.deepEqual(transactItems[0].Delete.Key, {
-    PK: "USER#user-b",
-    SK: "FRIEND#user-a",
-  });
-  assert.deepEqual(transactItems[1].Delete.Key, {
-    PK: "USER#user-a",
-    SK: "FRIEND#user-b",
-  });
-});
-
-test("declineFriendRequest returns 400 when request is not incoming", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
-      return {
-        Item: {
-          PK: "USER#user-b",
-          SK: "FRIEND#user-a",
-          status: "PENDING",
-          requestedBy: "user-b",
-        },
-      };
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
-  });
-
-  await assert.rejects(
-    () => declineFriendRequest("user-b", { requesterUserId: "user-a" }, client),
-    (error) => {
-      assert.equal(error.statusCode, 400);
-      assert.equal(error.message, "Only incoming friend requests can be declined.");
-      return true;
-    }
-  );
-
-  assert.equal(calls.length, 1);
-});
-
-test("declineFriendRequest returns 409 when relationship is not pending", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
-      return {
-        Item: {
-          PK: "USER#user-b",
-          SK: "FRIEND#user-a",
-          status: "ACCEPTED",
-          requestedBy: "user-a",
-        },
-      };
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
-  });
-
-  await assert.rejects(
-    () => declineFriendRequest("user-b", { requesterUserId: "user-a" }, client),
-    (error) => {
-      assert.equal(error.statusCode, 409);
-      assert.equal(error.message, "Friend relationship is not in a pending state.");
-      return true;
-    }
-  );
-
-  assert.equal(calls.length, 1);
-});
-
-test("listFriendSuggestions returns empty list when current user profile is missing", async () => {
-  const { calls, client } = createDocClient(async (command) => {
-    if (commandName(command) === "GetCommand") {
-      return {};
-    }
-    throw new Error(`Unexpected command: ${commandName(command)}`);
-  });
-
-  const response = await listFriendSuggestions("user-a", client);
-  assert.deepEqual(response, {
-    userId: "user-a",
-    suggestions: [],
-  });
-
-  assert.equal(calls.length, 1);
-  assert.equal(commandName(calls[0]), "GetCommand");
 });

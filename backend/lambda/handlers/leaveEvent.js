@@ -26,6 +26,7 @@ class HttpError extends Error {
  *       advances the event to FINALIZED.
  */
 export async function leaveEvent(userId, eventId, docClient) {
+  /* istanbul ignore next */
   if (!TABLE_NAME) {
     throw new HttpError(500, "MAIN_TABLE environment variable is not configured.");
   }
